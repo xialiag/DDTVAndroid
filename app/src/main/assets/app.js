@@ -181,6 +181,16 @@ function renderCSelect(el, options, value, onChange) {
     const willOpen = !el.classList.contains('open');
     document.querySelectorAll('.cselect.open').forEach(c => c.classList.remove('open'));
     el.classList.toggle('open', willOpen);
+    if (willOpen) {
+      // 打开后检查菜单是否超出视口（触发器靠右时左对齐会右溢），超出则改为右对齐
+      requestAnimationFrame(() => {
+        if (!el.classList.contains('open')) return;
+        const m = el.querySelector('.cs-menu');
+        const r = m.getBoundingClientRect();
+        if (r.right > window.innerWidth) { m.style.left = 'auto'; m.style.right = '0'; }
+        else if (r.left < 0) { m.style.left = '0'; m.style.right = 'auto'; }
+      });
+    }
   });
   menu.querySelectorAll('.cs-opt').forEach(o => {
     o.addEventListener('click', e => {
@@ -598,7 +608,7 @@ function renderRoomDetail(rid, container) {
   const isLive = r.liveStatus===1||r.liveStatus===2, rec = r.recState==='recording';
   body.innerHTML = `<div class="view">
     <div class="head-row">
-      ${r.cover?`<img src="${esc(imgUrl(r.cover))}" class="head-cover" referrerpolicy="no-referrer" onerror="this.style.display='none'">`:''}
+      ${r.cover?`<div class="head-cover-wrap"><img src="${esc(imgUrl(r.cover))}" class="head-cover" referrerpolicy="no-referrer" onerror="this.parentElement.classList.add('no-img')"></div>`:''}
       <div class="head-info">
         <div class="detail-title">${esc(r.name||'房间 '+r.roomId)}</div>
         <div class="detail-meta"><span class="state-pill ${isLive?'state-running':'state-offline'}">${isLive?'● LIVE':'● OFFLINE'}</span>
@@ -614,7 +624,7 @@ function renderRoomDetail(rid, container) {
         :`<button class="btn btn-primary" onclick="startRec(${r.roomId})">${ic('record',14)} 立即录制</button>`}
       <button class="btn btn-sec" onclick="openLive(${r.roomId})">${ic('eye',14)} 观看直播</button>
       <button class="btn btn-sec" onclick="refreshRoom(${r.roomId})">${ic('refresh',14)} 刷新</button>
-      <button class="btn btn-danger-sec btn-sm" onclick="removeRoom(${r.roomId})">移除</button></div>
+      <button class="btn btn-danger-sec" onclick="removeRoom(${r.roomId})">${ic('trash',14)} 移除</button></div>
     <h2>录制状态</h2>
     <div class="stat-grid">
       <div class="stat-card"><div class="sc-label">已录制</div><div class="sc-value">${fmtSize(r.recSize)}</div></div>
@@ -706,23 +716,24 @@ function sendDm() {
 }
 
 function loadDanmakuHistory() {
-  // 拉全量内存缓冲（上限 500 条），避免“点进来只显示最近 100 条”内容偏少
+  // 拉全量内存缓冲（上限 500 条），避免“点进来只显示最近 100 条”内容偏少；历史加载不去重
   try { const list=JSON.parse(AndroidBridge.getRecentDanmaku(state.danmakuRoom,500));
     const stream=$('#dmStream'); if(!stream||!list.length) return;
-    stream.innerHTML=''; list.forEach(dm=>appendDanmaku(dm,true)); } catch(e){}
+    stream.innerHTML=''; list.forEach(dm=>appendDanmaku(dm,true,true)); } catch(e){}
 }
 
-function appendDanmaku(dm, noScroll) {
+function appendDanmaku(dm, noScroll, skipDedup) {
   const stream=$('#dmStream'); if(!dm||!stream||dm.roomId!==state.danmakuRoom) return;
   // 普通弹幕去重：5 秒窗口内相同用户+内容只显示一次（防重连/协议重发刷屏）
-  if (dm.type==='DANMU_MSG' && isDupDanmaku(dm.user, dm.content)) return;
+  // 历史加载(skipDedup)不去重：避免刷屏弹幕被大量滤掉导致“显示少、只剩礼物”
+  if (dm.type==='DANMU_MSG' && !skipDedup && isDupDanmaku(dm.user, dm.content)) return;
   if(stream.querySelector('.dm-empty')) stream.innerHTML='';
   const cls=dm.type==='SEND_GIFT'?'gift':dm.type==='SUPER_CHAT_MESSAGE'?'sc':(dm.type==='GUARD_BUY'||dm.type==='GUARD_RENEW')?'guard':'';
   const color=dm.type==='DANMU_MSG'&&dm.color?`style="color:#${('000000'+dm.color.toString(16)).slice(-6)}"`:'';
   const el=document.createElement('div'); el.className='dm-item '+cls;
   el.innerHTML=`<span class="dm-time">${fmtTime(dm.time)}</span><span class="dm-user">${esc(dm.user)}</span>
     <span class="dm-content" ${color}>${esc(dm.content)}${dm.extra?' <span class="txt-warn">'+esc(dm.extra)+'</span>':''}</span>`;
-  stream.appendChild(el); while(stream.children.length>300) stream.removeChild(stream.firstChild);
+  stream.appendChild(el); while(stream.children.length>500) stream.removeChild(stream.firstChild);
   if(!noScroll) stream.scrollTop=stream.scrollHeight;
 }
 
