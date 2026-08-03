@@ -118,11 +118,17 @@ object LiveRecorder {
         }
     }
 
+    @Volatile private var lastBackfillAt = 0L
+
     /**
-     * 启动时补提取：audioOnly 房间目录里残留的未提取音频（进程被杀/重启导致收尾未跑），
-     * 扫描 *_original.flv|mp4 且无对应 *_audio.m4a 的文件，后台提取为 m4a。
+     * 启动时/录制结束后补提取：audioOnly 房间目录里残留的未提取音频（进程被杀/重启导致收尾未跑），
+     * 扫描 *_original.flv|mp4 且无对应 *_audio.m4a 的文件，后台提取为 m4a（内部三级容错：完整→容错copy→重编码）。
+     * 防抖：每分钟最多执行一次。
      */
     fun extractPendingAudioFiles() {
+        val now = System.currentTimeMillis()
+        if (now - lastBackfillAt < 60_000) return
+        lastBackfillAt = now
         Thread({
             try {
                 RoomManager.getRooms().filter { it.audioOnly }.forEach { card ->

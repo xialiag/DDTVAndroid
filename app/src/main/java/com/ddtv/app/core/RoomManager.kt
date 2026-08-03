@@ -461,6 +461,10 @@ object RoomManager {
         if (files.isEmpty()) return
         addHistory(card, files)
         migratePlaceholderFolder(card)  // 录制刚结束：立刻迁移占位目录，不等下一轮轮询
+        if (card.audioOnly) {
+            // 仅音频录制结束：立即补提取残留的未提取音频（中断/被杀场景），不等下次启动
+            LiveRecorder.extractPendingAudioFiles()
+        }
     }
 
     // ============ 录制历史（对应原版 Detect.histories + HistoryPage） ============
