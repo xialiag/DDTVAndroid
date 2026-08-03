@@ -144,6 +144,9 @@ class MainActivity : AppCompatActivity() {
             }
         }
 
+        // 恢复上次未完成的修复任务（中断的修复自动继续）
+        try { com.ddtv.app.core.RepairTaskManager.restorePending(this) } catch (_: Exception) {}
+
         // 启动前台服务
         startService(Intent(this, LiveService::class.java))
 
@@ -298,6 +301,8 @@ class MainActivity : AppCompatActivity() {
 
     override fun onDestroy() {
         // 录制需要后台持续，服务独立于 Activity 生命周期
+        // 保存未完成的修复任务：退出后下次启动自动继续（running 的半成品输出会被重跑覆盖）
+        try { com.ddtv.app.core.RepairTaskManager.persistPending(this) } catch (_: Exception) {}
         super.onDestroy()
     }
 }

@@ -50,6 +50,35 @@ object RepairTaskManager {
 
     fun list(): List<Task> = tasks.toList()
 
+    // ============ 持久化：退出/被杀后恢复未完成任务（中断的修复下次启动自动继续） ============
+
+    /** 保存当前 pending/running 任务到 prefs（MainActivity.onDestroy 调用；系统杀进程不保证） */
+    fun persistPending(ctx: android.content.Context) {
+        try {
+            val arr = org.json.JSONArray()
+            tasks.filter { it.state == "pending" || it.state == "running" }.forEach { t ->
+                arr.put(org.json.JSONObject().apply { put("input", t.input); put("mode", t.mode) })
+            }
+            ctx.getSharedPreferences("ddtv_repair", android.content.Context.MODE_PRIVATE)
+                .edit().putString("pending", arr.toString()).apply()
+        } catch (_: Exception) {}
+    }
+
+    /** 恢复上次未完成的修复任务（重新入队；running 的半成品输出会被 -y 覆盖重跑） */
+    fun restorePending(ctx: android.content.Context) {
+        try {
+            val prefs = ctx.getSharedPreferences("ddtv_repair", android.content.Context.MODE_PRIVATE)
+            val s = prefs.getString("pending", "") ?: return
+            prefs.edit().remove("pending").apply()
+            if (s.isBlank()) return
+            val arr = org.json.JSONArray(s)
+            for (i in 0 until arr.length()) {
+                val o = arr.getJSONObject(i)
+                submit(o.optString("input"), o.optString("mode", "repair"))
+            }
+        } catch (_: Exception) {}
+    }
+
     /** 提交任务，返回任务对象 */
     fun submit(input: String, mode: String): Task {
         val t = Task(id = idSeq.getAndIncrement(), input = input, mode = mode)

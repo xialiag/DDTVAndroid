@@ -57,11 +57,15 @@ object FFmpegRemux {
         Logger.i("Remux", "提取音频轨: $input")
         try {
             val cover = File(input.substringBeforeLast('.') + "_cover.jpg")
+            // 精确封面不存在时，兜底用同目录任意封面（封面去重后段名可能对不上）
+            val coverForCmd: File? = if (cover.exists()) cover else {
+                cover.parentFile?.listFiles { f -> f.name.endsWith("_cover.jpg") }?.firstOrNull()
+            }
             val day = if (date.isNotBlank()) date
                 else SimpleDateFormat("yyyy-MM-dd", java.util.Locale.CHINA).format(java.util.Date(f.lastModified()))
             val cmds = listOf(
                 // 1. 完整提取：封面 + 元数据 + 音频 copy
-                audioCmd(input, output, cover, title, artist, day, tolerant = false, reencode = false),
+                audioCmd(input, output, coverForCmd, title, artist, day, tolerant = false, reencode = false),
                 // 2. 容错 copy：忽略错误帧（截断/半个分片等），去掉封面避免容器问题
                 audioCmd(input, output, null, title, artist, day, tolerant = true, reencode = false),
                 // 3. AAC 重编码：损坏严重时重编码修复时间轴/坏帧

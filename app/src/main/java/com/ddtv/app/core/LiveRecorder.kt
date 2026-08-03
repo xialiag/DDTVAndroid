@@ -401,6 +401,11 @@ object LiveRecorder {
             Thread({
                 try {
                     val bytes = Http.getBytes(card.cover, referer = "https://live.bilibili.com/")
+                    // 同目录已存在相同大小的封面（同一直播多段/换标题）→ 不重复落盘，避免一录播一堆封面
+                    val dup = coverFile.parentFile?.listFiles { f ->
+                        f.name.endsWith("_cover.jpg") && f.length() == bytes.size.toLong()
+                    }?.isNotEmpty() == true
+                    if (dup) return@Thread
                     coverFile.writeBytes(bytes)
                 } catch (_: Exception) {}
             }, "Cover-${card.roomId}").also { it.isDaemon = true; it.start() }
