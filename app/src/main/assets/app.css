@@ -644,7 +644,7 @@ input::placeholder{color:var(--fg-dim);opacity:.9}
 .vc-list{display:flex;flex-direction:column;gap:8px}
 .vc-item{display:flex;gap:12px;padding:10px;background:var(--card-bg);
   border:1px solid var(--card-border);border-radius:var(--r-lg);cursor:pointer;position:relative;
-  transition:border-color var(--dur-fast) var(--ease),background var(--dur-fast) var(--ease)}
+  align-items:center;transition:border-color var(--dur-fast) var(--ease),background var(--dur-fast) var(--ease)}
 .vc-item:hover{border-color:var(--border-light);background:var(--bg-elev)}
 .vc-item.vc-checked{border-color:var(--accent);background:var(--bg-active)}
 .vc-item .vc-cover-wrap{position:relative;width:120px;height:72px;flex:0 0 auto;
@@ -658,6 +658,8 @@ input::placeholder{color:var(--fg-dim);opacity:.9}
 .vc-item .vc-cover-wrap .vc-fmt{position:absolute;right:4px;bottom:4px;font-size:var(--fs-micro);
   font-weight:600;letter-spacing:.1em;padding:1px 5px;border-radius:var(--r-sm);
   background:rgba(0,0,0,.55);color:#fff;z-index:2}
+.vc-item .hist-chk{position:absolute;left:8px;top:8px;z-index:3;width:16px;height:16px;
+  accent-color:var(--accent);cursor:pointer}
 .vc-item .vc-cover-wrap:not(.has-img) .vc-fmt{position:static;display:inline;padding:0;background:none;
   color:var(--fg-dim);letter-spacing:.1em;border-radius:0}
 .vc-item .vc-badge{margin-left:auto;padding:1px 6px;border-radius:var(--r-sm);font-size:var(--fs-micro);
@@ -688,8 +690,9 @@ input::placeholder{color:var(--fg-dim);opacity:.9}
 .vc-item .vc-title{font-size:var(--fs-md);font-weight:500;color:var(--fg-bright);line-height:1.35;
   white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .vc-item .vc-meta{font-size:var(--fs-xs);color:var(--fg-dim);display:flex;align-items:center;gap:10px;
-  flex-wrap:wrap;font-variant-numeric:tabular-nums}
+  flex-wrap:nowrap;font-variant-numeric:tabular-nums;min-width:0}
 .vc-item .vc-meta span{white-space:nowrap;flex-shrink:0;overflow:hidden;text-overflow:ellipsis}
+.vc-item .vc-meta span:first-child{flex:1 1 auto;min-width:0;flex-shrink:1}
 .vc-item .vc-date{font-size:var(--fs-micro);color:var(--fg-dim);font-family:var(--mono);opacity:.85}
 /* 底部渐隐：提示列表可滚动，避免卡片被硬生生切断 */
 .tools-file-list{max-height:242px;overflow-y:auto;border:1px solid var(--border);

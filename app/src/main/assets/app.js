@@ -706,7 +706,8 @@ function sendDm() {
 }
 
 function loadDanmakuHistory() {
-  try { const list=JSON.parse(AndroidBridge.getRecentDanmaku(state.danmakuRoom,100));
+  // 拉全量内存缓冲（上限 500 条），避免“点进来只显示最近 100 条”内容偏少
+  try { const list=JSON.parse(AndroidBridge.getRecentDanmaku(state.danmakuRoom,500));
     const stream=$('#dmStream'); if(!stream||!list.length) return;
     stream.innerHTML=''; list.forEach(dm=>appendDanmaku(dm,true)); } catch(e){}
 }
@@ -869,20 +870,29 @@ function renderHistoryPanel() {
   const body=$('#editorBody');
   loadHistory();
   if(!state.history.length) {
+    _histManage=false; _histSel.clear();
     body.innerHTML='<div class="detail-empty"><div class="empty-icon">'+ic('film',28)+'</div><div class="empty-hint-title">暂无录制历史</div><div class="empty-hint-sub">直播录制结束后会记录在这里</div></div>';
     return;
   }
   body.innerHTML=`<div class="view">
     <h1>录制历史</h1>
-    <p class="lead">共 ${state.history.length} 条录制记录（长按可管理）</p>
+    <p class="lead">共 ${state.history.length} 条录制记录</p>
+    <div class="btn-row tight">
+      ${_histManage
+        ? `<button class="btn btn-sec btn-sm" onclick="toggleHistSelectAll()">${ic('check',12)} 全选</button>
+           <button class="btn btn-danger btn-sm" data-act="histDel" onclick="deleteSelectedHist()">${ic('trash',12)} 删除(${_histSel.size})</button>
+           <button class="btn btn-sec btn-sm" onclick="exitHistManage()">退出</button>`
+        : `<button class="btn btn-sec btn-sm" onclick="enterHistManage()">${ic('check',12)} 批量管理</button>`}
+    </div>
     <div class="vc-list">
     ${state.history.map((h,idx)=>{
       const cover = h.coverPath || roomCoverOf(h.name);
-      return `<div class="vc-item" data-idx="${idx}">
+      return `<div class="vc-item${_histManage&&_histSel.has(idx)?' vc-checked':''}" data-idx="${idx}">
         <div class="vc-cover-wrap${cover ? ' has-img' : ''}">
           ${cover ? `<img class="vc-cover" src="${esc(cover)}" referrerpolicy="no-referrer" alt="" onerror="this.parentElement.classList.remove('has-img')">` : ''}
           <div class="vc-cover vc-cover-ph">${ic('film',20)}</div>
           <span class="vc-fmt">回放</span>
+          ${_histManage?`<input type="checkbox" class="hist-chk" ${_histSel.has(idx)?'checked':''} onclick="event.stopPropagation()">`:''}
         </div>
         <div class="vc-body">
           <div class="vc-title">${esc(h.name)}</div>
@@ -893,11 +903,15 @@ function renderHistoryPanel() {
     }).join('')}
     </div>
   </div>`;
-  // 单击查看直播；长按弹出管理菜单
+  // 单击查看直播；长按弹出管理菜单；管理模式下单击切换选中
   body.querySelectorAll('.vc-item').forEach(el => {
     const idx = Number(el.dataset.idx);
     const h = state.history[idx];
     if (!h) return;
+    if (_histManage) {
+      el.onclick = () => toggleHistSel(idx, el);
+      return;
+    }
     el.onclick = () => openHistoryRoom(h.roomId);
     const isMonitored = (state.rooms||[]).some(r => r.roomId === h.roomId);
     el.addEventListener('contextmenu', e => e.preventDefault());
@@ -909,6 +923,33 @@ function renderHistoryPanel() {
     el.addEventListener('mouseup', () => longPressCancel(false));
     el.addEventListener('mouseleave', () => longPressCancel(true));
   });
+}
+/* ========== 录制历史批量管理 ========== */
+let _histManage=false, _histSel=new Set();
+function enterHistManage(){ _histManage=true; _histSel.clear(); renderHistoryPanel(); }
+function exitHistManage(){ _histManage=false; _histSel.clear(); renderHistoryPanel(); }
+function toggleHistSel(idx, el) {
+  if (_histSel.has(idx)) _histSel.delete(idx); else _histSel.add(idx);
+  el.classList.toggle('vc-checked', _histSel.has(idx));
+  const chk = el.querySelector('.hist-chk');
+  if (chk) chk.checked = _histSel.has(idx);
+  const btn = document.querySelector('[data-act=histDel]');
+  if (btn) btn.textContent = '删除(' + _histSel.size + ')';
+}
+function toggleHistSelectAll(){
+  if (_histSel.size === state.history.length) _histSel.clear();
+  else state.history.forEach((h,i)=>_histSel.add(i));
+  renderHistoryPanel();
+}
+function deleteSelectedHist() {
+  if (!_histSel.size) { toast('请先选择记录','warn'); return; }
+  const n = _histSel.size;
+  showModal({ title:'删除 '+n+' 条录制历史?', msg:'删除后不可恢复', okText:'删除',
+    onOk: () => {
+      const r = JSON.parse(AndroidBridge.deleteHistories(JSON.stringify([..._histSel])));
+      toast(r.msg||'已删除', r.code<0?'err':'ok');
+      _histSel.clear(); _histManage=false; loadHistory(); renderHistoryPanel();
+    } });
 }
 function openHistoryRoom(rid) { state.currentRoom=rid; switchView('explorer'); }
 

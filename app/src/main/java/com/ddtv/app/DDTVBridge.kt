@@ -488,6 +488,20 @@ class DDTVBridge(private val context: Context, private val webView: WebView) {
         return if (RoomManager.deleteHistory(index)) """{"code":1,"msg":"已删除"}""" else """{"code":-1,"msg":"删除失败"}"""
     }
 
+    /** 批量删除录制历史（indices 为 JSON 数组；倒序删避免索引错位） */
+    @JavascriptInterface
+    fun deleteHistories(indices: String): String {
+        return try {
+            val arr = JSONArray(indices)
+            val idxs = (0 until arr.length()).map { arr.getInt(it) }.sortedDescending()
+            if (idxs.isEmpty()) return """{"code":-1,"msg":"未选择记录"}"""
+            idxs.forEach { RoomManager.deleteHistory(it) }
+            """{"code":1,"msg":"已删除 ${idxs.size} 条"}"""
+        } catch (e: Exception) {
+            """{"code":-1,"msg":"${e.message}"}"""
+        }
+    }
+
     // ============ 数据统计 ============
 
     @JavascriptInterface
