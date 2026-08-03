@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<paths>
+    <!-- 用户可自选录制目录（如 /storage/emulated/0/DDTV），须覆盖外部存储根，否则 FileProvider 播放/分享报
+         "Failed to find configured root"（参照 BBDownAndroid 配置） -->
+    <external-path name="external" path="." />
+    <external-files-path name="recordings" path="DDTV/" />
+    <external-files-path name="logs" path="logs/" />
+    <cache-path name="cache" path="/" />
+</paths>

@@ -1,0 +1,39 @@
+# Gradle
+.gradle/
+build/
+
+# Local configuration
+local.properties
+
+# Signing
+*.keystore
+*.jks
+
+# FFmpegKit AAR (binary, too large for git)
+app/libs/*.aar
+
+# APK output
+*.apk
+
+# IDE
+.idea/
+*.iml
+.DS_Store
+
+# Logs
+*.log
+logs/
+crash_*.txt
+
+# Temporary files
+*.tmp
+*.dl
+*.vpart
+*.apart
+
+# Local build assets (ARM64 env, not part of source)
+# local build artifacts
+ffmpeg-8.1.2-src/
+prebuilt/
+BBDown.exe
+dist/

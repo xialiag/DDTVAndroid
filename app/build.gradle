@@ -1,0 +1,80 @@
+plugins {
+    id 'com.android.application'
+    id 'org.jetbrains.kotlin.android'
+}
+
+// FFmpegKit AAR（flv→mp4 转封装 / 文件修复）;构建时 -PffmpegVersion=6|8 选择，默认 8
+// 用法: ./gradlew assembleRelease -PffmpegVersion=6
+def ffmpegVersion = project.findProperty('ffmpegVersion') ?: '8'
+def ffmpegAarFile = file("libs/ffmpeg-kit-full-v${ffmpegVersion}.aar")
+
+android {
+    namespace 'com.ddtv.app'
+    compileSdk 33
+    buildToolsVersion "34.0.0"
+
+    signingConfigs {
+        release {
+            storeFile file('../bbdown-release.keystore')
+            storePassword 'bbdown123'
+            keyAlias 'bbdown'
+            keyPassword 'bbdown123'
+            v1SigningEnabled true
+            v2SigningEnabled true
+        }
+    }
+
+    defaultConfig {
+        applicationId "com.ddtv.app"
+        minSdk 24
+        targetSdk 33
+        versionCode 10
+        versionName "0.7.0"
+        vectorDrawables.useSupportLibrary = true
+        ndk {
+            abiFilters 'arm64-v8a'
+        }
+    }
+
+    buildTypes {
+        debug {
+            minifyEnabled false
+            signingConfig signingConfigs.release
+        }
+        release {
+            minifyEnabled false
+            signingConfig signingConfigs.release
+            proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
+        }
+    }
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_11
+        targetCompatibility JavaVersion.VERSION_11
+    }
+    kotlinOptions {
+        jvmTarget = '11'
+    }
+    sourceSets {
+        main {
+            assets.srcDirs = ['src/main/assets']
+        }
+    }
+}
+
+dependencies {
+    implementation 'androidx.core:core-ktx:1.9.0'
+    implementation 'androidx.appcompat:appcompat:1.6.1'
+    implementation 'com.google.android.material:material:1.8.0'
+    implementation 'androidx.webkit:webkit:1.6.1'
+    // 弹幕 WebSocket 客户端
+    implementation 'org.java-websocket:Java-WebSocket:1.5.4'
+    implementation 'org.slf4j:slf4j-nop:1.7.36'
+    // brotli 解压（弹幕 protover=3）
+    implementation 'org.brotli:dec:0.1.2'
+    // ZXing 二维码生成（扫码登录）
+    implementation 'com.google.zxing:core:3.5.1'
+    // FFmpegKit AAR（flv→mp4 转封装）
+    implementation files(ffmpegAarFile)
+    // FFmpegKit 的传递依赖（缺失会 NoClassDefFoundError）
+    implementation 'com.arthenica:smart-exception-java:0.2.1'
+}
