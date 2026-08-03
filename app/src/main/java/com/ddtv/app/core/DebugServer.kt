@@ -159,8 +159,8 @@ object DebugServer {
         val rooms = RoomManager.getRooms()
         val sb = StringBuilder()
         sb.append("{\"ts\":").append(System.currentTimeMillis())
-            .append(",\"version\":\"").append(com.ddtv.app.BuildConfig.VERSION_NAME).append('\"')
-            .append("\"activeType\":\"web\"")
+            .append(",\"version\":\"").append(com.ddtv.app.BuildConfig.VERSION_NAME).append('"')
+            .append(",\"activeType\":\"web\"")
             .append(",\"logSeq\":").append(Logger.maxSeq())
             .append(",\"web\":").append(accountJson(am.getWebAccount()))
         // 房间
