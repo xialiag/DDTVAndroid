@@ -514,13 +514,10 @@ function renderEditor() {
   } else if (v === 'tools') { tabs.innerHTML = '<div class="tab active">修复工具</div>'; loadFiles(); renderToolsPanel();
   } else if (v === 'account') { tabs.innerHTML = '<div class="tab active">账号管理</div>'; renderAccount(); }
   else if (v === 'settings') { tabs.innerHTML = '<div class="tab active">设置</div>'; renderSettings();
-  } else if (v === 'log') { tabs.innerHTML = '<div class="tab active">运行日志</div>';
+  } else if (v === 'log') { tabs.innerHTML = '<div class="tab active">运行日志</div>' +
+      `<button class="btn btn-sec btn-sm" style="margin-left:auto;margin-right:8px;align-self:center" onclick="saveLogsToFile()">${ic('save',12)} 保存到文件</button>`;
     body.innerHTML = `<div class="log-toolbar">
-      <span class="toolbar-text">运行日志（最近 200 条）</span>
-      <button class="btn btn-sec btn-sm" onclick="loadLogs()">${ic('refresh',12)} 刷新</button>
-      <button class="btn btn-sec btn-sm" onclick="saveLogsToFile()">${ic('save',12)} 保存到文件</button>
-      <button class="btn btn-sec btn-sm" onclick="clearDebugLogs()">${ic('trash',12)} 清除</button>
-      <button class="btn btn-sec btn-sm" onclick="renderCrashLogs()">${ic('alert',12)} 崩溃日志</button></div>
+      <span class="toolbar-text">运行日志（自动落盘保留7天，崩溃日志在设置-调试中查看）</span></div>
       <div class="log-panel" id="logPanel"></div>`;
     loadLogs();
   }
@@ -1305,6 +1302,7 @@ function renderSettings() {
     <h2>调试</h2>
     <div class="switch-row"><div class="sw-text"><div class="sw-label">调试服务器</div><div class="sw-desc">端口 19864，本机/同一WiFi可查看状态与日志；默认关闭</div></div>
       <label class="switch"><input type="checkbox" id="setDebug" onchange="toggleDebugServer()"><span class="slider"></span></label></div>
+    <div class="btn-row tight"><button class="btn btn-sec btn-sm" onclick="renderCrashLogs()">${ic('alert',12)} 崩溃日志</button></div>
     <h2>更新</h2>
     <div class="switch-row"><div class="sw-text"><div class="sw-label">启动时检查更新</div><div class="sw-desc">启动后静默检查，有新版本才提示（仓库: xialiag/DDTVAndroid）</div></div>
       <label class="switch"><input type="checkbox" id="setAutoUpdate" onchange="saveSettings()"><span class="slider"></span></label></div>

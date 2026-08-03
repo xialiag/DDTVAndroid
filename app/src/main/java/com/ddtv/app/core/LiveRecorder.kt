@@ -213,7 +213,7 @@ object LiveRecorder {
             }
             val lineUrl = lines.getOrElse(lineRound % lines.size) { lines.first() }
             lineRound++
-            Logger.i("Recorder", "[${card.name}] 使用线路 ${lineRound % lines.size + 1}/${lines.size} (${mode.uppercase()})")
+            Logger.i("Recorder", "[${card.name.ifEmpty { card.roomId.toString() }}] 使用线路 ${lineRound % lines.size + 1}/${lines.size} (${mode.uppercase()})")
 
             val result = if (mode == "hls") {
                 if (lineUrl.isEmpty()) {
@@ -530,6 +530,7 @@ object LiveRecorder {
         // 外层循环：断流重连（flvAppendOnReconnect 开=原版 Append 同一文件续写；关=断流切新文件）
         while (!task.cancel.get()) {
             var broken = false
+            var httpCode = 0  // 0=网络断流/EOF;4xx=地址被拒/过期
             try {
                 FileOutputStream(file, true).use { fos ->
                     var conn: HttpURLConnection? = null
@@ -547,6 +548,7 @@ object LiveRecorder {
                         val code = conn.responseCode
                         if (code !in 200..399) {
                             Logger.w("Recorder", "[${card.name}] [FLV] 流 HTTP $code")
+                            httpCode = code
                             broken = true
                             return@use
                         }
@@ -596,6 +598,12 @@ object LiveRecorder {
                 stopWatch.stop()
                 finishSegment(card, file, bytesForThisSegment)
                 return "stopped"
+            }
+            // HTTP 4xx（常见 403 防盗链/地址过期）：重试同一条线路没有意义，立即收尾让外层换备线
+            if (httpCode in 400..499) {
+                stopWatch.stop()
+                finishSegment(card, file, bytesForThisSegment)
+                return "retry_exhausted"
             }
             // 断流/连接异常：按真实直播状态决定去向
             if (RoomManager.getLiveStatus(roomId) == 0) {
@@ -649,6 +657,7 @@ object LiveRecorder {
         var currentLocation = -1L
         var initWritten = false  // init segment 每文件只拼一次（提升到 while 外，避免重复 moov 损坏拼接文件）
         var m3u8Url = hlsUrl
+        var consecutiveFailures = 0  // 连续失败计数（403/网络）：达到上限收尾换备线，避免同线路无限重试
 
         try {
             FileOutputStream(file, true).use { fos ->
@@ -663,6 +672,12 @@ object LiveRecorder {
                         Http.get(m3u8Url, referer = "https://live.bilibili.com/")
                     } catch (e: Exception) {
                         Logger.w("Recorder", "[${card.name}] [HLS] 拉取 m3u8 失败: ${e.message}")
+                        consecutiveFailures++
+                        if (consecutiveFailures >= 5) {
+                            Logger.w("Recorder", "[${card.name}] [HLS] 连续失败 ${consecutiveFailures} 次，收尾换备线")
+                            finishSegment(card, file, bytesForThisSegment)
+                            return "retry_exhausted"
+                        }
                         Thread.sleep(1000)
                         continue
                     }
@@ -730,9 +745,16 @@ object LiveRecorder {
                             if (!ok) {
                                 // 分片下载失败：回退已写字节，刷新 m3u8 再试（原版 host 刷新机制）
                                 try { fos.channel.truncate(segStart) } catch (_: Exception) {}
+                                consecutiveFailures++
+                                if (consecutiveFailures >= 5) {
+                                    Logger.w("Recorder", "[${card.name}] [HLS] 连续失败 ${consecutiveFailures} 次（可能 403/线路异常），收尾换备线")
+                                    finishSegment(card, file, bytesForThisSegment)
+                                    return "retry_exhausted"
+                                }
                                 Thread.sleep(500)
                                 break
                             }
+                            consecutiveFailures = 0
                             currentLocation = seg.index
                             downloadedAny = true
                         }
