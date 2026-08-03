@@ -1,6 +1,7 @@
 # AGENTS.md — DDTV Android 开发行为指南
 
 本文件是给 AI 编码代理(以及任何协作者)的行为规范。改代码前先读它。
+架构细节、核心机制与发布流程见 [DEVELOPMENT.md](DEVELOPMENT.md)。
 
 ## 项目定位
 

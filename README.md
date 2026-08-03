@@ -1,61 +1,87 @@
 # DDTV Android
 
-按原版 [CHKZL/DDTV](https://github.com/CHKZL/DDTV)（B站直播录制工具）移植到 Android 的原生应用。
-UI 为 VSCode 风格 + B站粉（#FB7299）主题，项目结构参考 [xialiag/BBDownAndroid](https://github.com/xialiag/BBDownAndroid)（WebView + Kotlin 桥接）。
+B 站直播自动录制工具 —— 按原版 [CHKZL/DDTV](https://github.com/CHKZL/DDTV)(C#/.NET)移植到 Android 的原生应用。VSCode 风格 UI + B站粉(#FB7299)主题,项目结构参考 [xialiag/BBDownAndroid](https://github.com/xialiag/BBDownAndroid)。
 
-## 功能（对应原版模块）
+## 功能特性
 
-| 原版 DDTV 模块 | Android 移植 |
+- **开播自动录制**:批量轮询检测开播,自动开始录制;支持 FLV 直录与 HLS 两种模式
+  - **FLV 直录**(默认):边下边写连续 FLV tag,时间轴天然正确,录完即播;断流重连后同文件续写(原版 Append 行为)
+  - **HLS**:分片级续传,网络抖动更稳;中断的文件自动修复链兜底
+- **仅录音频**:只拉音频流录制,输出 `*_original_audio.m4a` 标准音频文件,自动嵌入**标题/主播/日期元数据 + 直播间封面**;中断/损坏文件三级降级自动修复(容错 copy → AAC 重编码)
+- **弹幕录制**:弹幕/礼物/SC/舰长/续费/进场,直播结束自动存档(JSON + CSV)
+- **扫码登录**:网页版 / TV 版双登录态,支持 Cookie 粘贴登录
+- **关注导入**:拉取关注分组,一键批量导入监控;添加直播间自动获取主播名/标题(不再出现"房间 12345"占位目录)
+- **备线切换**:流地址 403/异常秒切备线(CDN 多线路轮换)
+- **修复工具**:损坏文件修复(忽略错误重封装)/完整转码/快速转封装,任务队列可取消重试;支持视频与音频(m4a)文件
+- **文件管理**:按主播/日期归档,封面显示,变体自动归并(已修复/已转码徽标),播放失败自动修复链
+- **录制历史**:按次记录,支持批量管理(多选删除)
+- **调试服务器**(端口 19864):浏览器实时查看状态/日志/崩溃日志/历史日志,设置中开关,默认关闭
+- **自动更新**:检查 GitHub Releases,启动静默检查 + 手动检查
+
+## 安装
+
+从 [GitHub Releases](https://github.com/xialiag/DDTVAndroid/releases) 下载:
+
+| 包 | 说明 |
 |---|---|
-| `DetectRoom.cs` 开播检测 | `RoomManager`：批量 `get_status_info_by_uids` 轮询，首轮强制触发已开播房间，重入保护 |
-| `Download/FLV.cs` | `LiveRecorder.flvSegment`：FLV 直连流 Append 写入，重试3次指数退避，断流查状态 |
-| `Download/HLS.cs` | `LiveRecorder.hlsSegment`：m3u8 增量分片下载，二级 m3u8、ENDLIST 收尾 |
-| `Download/Basics.cs` | Auto 模式 HLS 优先降级 FLV；标题/时长/大小分割；主播重推流切分；小文件清理 |
-| `Tools/Transcode.cs` | `FFmpegRemux`：ffmpeg-kit `-c copy` 转封装 flv→mp4 |
-| `LiveChat/LiveChatListener.cs` | `DanmakuClient`：弹幕/礼物/SC/舰长/续费/进场 + 发送弹幕（需登录） |
-| `Account/Kernel/ByQRCode.cs` | `AccountManager`：扫码登录（ZXing 生成 B站粉二维码）+ Cookie 粘贴登录 |
-| `Network/Methods/Follow.cs` | 关注分组拉取 + 批量导入监控 |
-| `WatchHeartbeatManager.cs` + `HmacChain.cs` | `WatchHeartbeat`：x25Kn E/X 心跳（链式 HMAC，含纯 Kotlin SHA-224） |
-| `Download/Cover.cs` | 每段录制保存封面 cover.jpg |
-| `LogModule/log.cs` | `Logger`：内存环形缓冲 + UI 实时推送 |
+| `DDTV-x.y.z-ffmpeg-8.release.apk` | FFmpeg 8.1.2 引擎(默认推荐) |
+| `DDTV-x.y.z-ffmpeg-6.release.apk` | FFmpeg 6.1.6 引擎(兼容备用) |
+
+- Android 7.0+(arm64)
+- 首次使用:授予通知权限(开播提醒)、存储权限(录制目录,可自定义)、电池优化白名单(后台持续录制)
+- 录制目录默认 `/storage/emulated/0/DDTV/`,可设置中修改
+
+## 快速开始
+
+1. 打开 App → 右上角 `＋` 添加直播间(房间号/短号/UID)
+2. 登录(账号页扫码)→ 自动录制默认开启
+3. 设置页调整:录制模式(FLV/HLS/自动)、默认清晰度、分割规则、仅录音频等
+
+## 录制文件结构
+
+```
+/storage/emulated/0/DDTV/
+├── 主播名/
+│   └── 2026-08-03/
+│       ├── 15-23-51_直播标题_original.flv        # 原始录制
+│       ├── 15-23-51_直播标题_original_cover.jpg  # 直播间封面(每场一个)
+│       ├── 15-23-51_直播标题_original_repaired.mp4  # 修复产物(播放时自动生成)
+│       └── 18-14-42_直播标题_original_audio.m4a  # 仅录音频模式输出(带元数据+封面)
+```
+
+## 常见问题
+
+- **录制地址 403**:B 站 CDN 线路风控/地址过期,App 已自动秒切备线;若所有线路都失败,15 秒后自动重试
+- **播放不了**:FLV/HLS 中断文件点播放会自动走修复链(repair → transcode),完成后自动播放;也可用修复工具手动修
+- **仅录音频没有 m4a**:正常收尾/启动补提取/录制结束即时补提取三保险,残留 flv/mp4 会自动转成 m4a
+- **弹幕接口 -352**:数据中心 IP 风控,家庭宽带/移动网络正常
+- **桌面图标没更新**:卸载旧版或重装后图标缓存需刷新(移除图标重新添加)
 
 ## 构建
 
 ```bash
-./build-apk.sh        # release
-./build-apk.sh debug  # debug
+./build-apk.sh            # release, FFmpeg 8(默认)
+./build-apk.sh 6 release  # release, FFmpeg 6
+./build-apk.sh all release# release, FFmpeg 6 + 8 双版本
+./build-apk.sh debug      # debug
 ```
 
-产物在 `dist/DDTV-<版本>-<类型>.apk`。脚本自动处理 FFmpegKit AAR 反斜杠路径修复、native 库自检、签名验证。
-依赖 SDK：`/opt/android-sdk`（Platform 33 + Build-Tools 34.0.0，ARM64 需要替换 x86_64 二进制，见 android-sdk-setup skill）。
-
-## 目录结构
-
-```
-app/src/main/
-├── assets/
-│   ├── index.html          # VSCode 风格 UI（titlebar/activitybar/sidebar/editor tabs/statusbar）
-│   ├── app.css             # 深色/浅色双主题 + B站粉（#FB7299），窄屏抽屉式侧边栏
-│   └── app.js              # UI 逻辑：10 个活动视图（监控/弹幕/关注/文件/统计/历史/工具/账号/设置/日志）
-├── java/com/ddtv/app/
-│   ├── MainActivity.kt     # WebView 宿主 + 权限 + 返回键（页面栈深度感知）
-│   ├── DDTVBridge.kt       # JS ↔ Kotlin 桥
-│   ├── LiveService.kt      # 前台服务（mediaPlayback，后台持续录制）
-│   └── core/               # 核心逻辑（见上表）
-└── res/                    # 主题资源
-```
-
-## UI 说明
-
-- 布局仿 VSCode：标题栏 → 活动栏（左侧图标列）→ 侧边栏（资源管理器）+ 编辑器（标签页 + 内容）→ 状态栏
-- 状态栏使用 B站粉 #FB7299，实时显示录制中/监控房间/轮询间隔/登录账号
-- 手机窄屏（<768px）下侧边栏自动收起为抽屉：点击当前活动图标展开/收起，选中房间后自动关闭；系统返回键优先收抽屉
-- 深色/浅色/跟随系统三档主题，标题栏右侧切换
-- v0.6.1：修复 HLS 录制缺 init segment 导致无法播放；录制目录改为文字输入；播放时 FLV 自动转封装；侧边栏断点 991px；点击当前图标刷新视图
-- v0.6.0 UI 重构：全面改用设计令牌（app.css 顶部变量）驱动配色，模板内不再有内联样式；图标统一为 SVG 图标集（app.js `ICONS`/`ic()`），替换全部 emoji；配色对齐 VSCode Dark+/Light+ 官方色板
+产物在 `dist/`。详见 [DEVELOPMENT.md](DEVELOPMENT.md)。
 
 ## 已知限制
 
-- 弹幕接口 `getDanmuInfo` 在数据中心 IP 下可能被风控（-352），家庭宽带/移动网络正常；App 已注入官方 buvid3/buvid4 指纹降低概率
+- 弹幕接口在数据中心 IP 下可能被风控(-352),App 已注入官方 buvid 指纹降低概率
 - 付费直播录制需要登录
-- 小心心挂机（x25Kn）需要登录，连续失败 3 次自动停止
+- 小心心挂机(x25Kn)需要登录,连续失败 3 次自动停止
+- FFmpeg 非 GPL 构建不含 libx264,完整转码使用内置 mpeg4 编码器(Android 播放器兼容)
+
+## 更新日志
+
+### v0.7.0
+- 调试服务器:历史日志区(按天落盘保留 7 天,查看/删除)、崩溃日志区
+- 录制:修复任务不再打断正在录制的文件;FLV 403 秒切备线;HLS 连续失败换线;FLV 断流同文件续写;默认 FLV 直录(时间轴天然正确)
+- 仅录音频:m4a 输出带元数据+封面,中断三级降级修复,启动/录制结束自动补提取
+- 转码:FFmpeg 8.1.2 引擎,失败原因完整显示
+- 自动更新:检查更新弹窗 + 启动静默检查
+- 界面:卡片统一排版(等高/居中/截断)、历史批量管理、弹幕全量加载、详情页优化、新图标(粉底 + DDTV)
+- 构建:支持 `-PffmpegVersion=6|8` 双版本
