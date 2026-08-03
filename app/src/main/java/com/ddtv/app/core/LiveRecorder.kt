@@ -135,7 +135,7 @@ object LiveRecorder {
                             val m4a = f.absolutePath.substringBeforeLast('.') + "_audio.m4a"
                             if (!File(m4a).exists()) {
                                 Logger.i("Recorder", "[${card.name}] 补提取音频: ${f.name}")
-                                val out = FFmpegRemux.extractAudio(f.absolutePath)
+                                val out = FFmpegRemux.extractAudio(f.absolutePath, card.title, card.name)
                                 if (out != null) Logger.i("Recorder", "[${card.name}] 补提取完成: ${File(out).name}")
                             }
                         }
@@ -529,7 +529,7 @@ object LiveRecorder {
      */
     private fun afterSegmentFinalized(card: RoomCard, file: String): String {
         if (!card.audioOnly) return file
-        val m4a = FFmpegRemux.extractAudio(file)
+        val m4a = FFmpegRemux.extractAudio(file, card.title, card.name)
         if (m4a != null) {
             val idx = card.files.indexOf(file)
             if (idx >= 0) card.files[idx] = m4a
