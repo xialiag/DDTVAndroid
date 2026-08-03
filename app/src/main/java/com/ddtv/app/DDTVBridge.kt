@@ -363,7 +363,8 @@ class DDTVBridge(private val context: Context, private val webView: WebView) {
                         liver.listFiles()?.forEach { day ->
                             if (day.isDirectory) {
                                 day.listFiles()?.forEach { f ->
-                                    if (f.isFile && (f.name.endsWith(".flv") || f.name.endsWith(".mp4"))) {
+                                    if (f.isFile && (f.name.endsWith(".flv") || f.name.endsWith(".mp4") || f.name.endsWith(".m4a"))) {
+                                        val isAudio = f.name.endsWith(".m4a")
                                         arr.put(JSONObject().apply {
                                             put("name", f.name)
                                             put("path", f.absolutePath)
@@ -371,6 +372,7 @@ class DDTVBridge(private val context: Context, private val webView: WebView) {
                                             put("mtime", f.lastModified())
                                             put("uploader", liver.name)
                                             put("isFlv", f.name.endsWith(".flv"))
+                                            put("isAudio", isAudio)
                                             // 封面：同目录保存的 _cover.jpg（LiveRecorder.saveCoverIfNeeded），
                                             // 转 content:// URI 供 WebView 加载（不依赖监控房间列表/网络）
                                             val cover = java.io.File(f.absolutePath.substringBeforeLast('.') + "_cover.jpg")

@@ -34,6 +34,7 @@ const ICONS = {
   share:'M18 16.08c-.76 0-1.44.3-1.96.77L8.91 12.7c.05-.23.09-.46.09-.7s-.04-.47-.09-.7l7.05-4.11c.54.5 1.25.81 2.04.81 1.66 0 3-1.34 3-3s-1.34-3-3-3-3 1.34-3 3c0 .24.04.47.09.7L8.04 9.81C7.5 9.31 6.79 9 6 9c-1.66 0-3 1.34-3 3s1.34 3 3 3c.79 0 1.5-.31 2.04-.81l7.12 4.16c-.05.21-.08.43-.08.65 0 1.61 1.31 2.92 2.92 2.92 1.61 0 2.92-1.31 2.92-2.92s-1.31-2.92-2.92-2.92z',
   eye:'M12 4.5C7 4.5 2.73 7.61 1 12c1.73 4.39 6 7.5 11 7.5s9.27-3.11 11-7.5c-1.73-4.39-6-7.5-11-7.5zM12 17c-2.76 0-5-2.24-5-5s2.24-5 5-5 5 2.24 5 5-2.24 5-5 5zm0-8c-1.66 0-3 1.34-3 3s1.34 3 3 3 3-1.34 3-3-1.34-3-3-3z',
   record:'M12 7a5 5 0 1 0 0 10 5 5 0 0 0 0-10z',
+  music:'M12 3v10.55A4 4 0 1 0 14 17V7h4V3h-6z',
   home:'M10 20v-6h4v6h5v-8h3L12 3 2 12h3v8z',
   user:'M12 12a5 5 0 1 0 0-10 5 5 0 0 0 0 10zm0 2c-5 0-9 2.5-9 6v2h18v-2c0-3.5-4-6-9-6z',
   monitor:'M20 3H4c-1.1 0-2 .9-2 2v11c0 1.1.9 2 2 2h6v2H8v2h8v-2h-2v-2h6c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm0 13H4V5h16v11z',
@@ -402,11 +403,11 @@ function filesSignature(list) { return list.map(f => f.name + '|' + f.size + '|'
 function fileCardHtml(f, metaExtra) {
   // 优先本地封面（录制时保存的 _cover.jpg，content:// URI）；其次监控房间封面；再回退占位
   const cover = f.coverPath || roomCoverOf(f.uploader);
-  const fmt = f.isFlv ? 'FLV' : 'MP4';
+  const fmt = f.isFlv ? 'FLV' : f.isAudio ? '音频' : 'MP4';
   return `<div class="vc-item" data-path="${esc(f.path)}">
     <div class="vc-cover-wrap${cover ? ' has-img' : ''}">
       ${cover ? `<img class="vc-cover" src="${esc(cover)}" referrerpolicy="no-referrer" alt="" onerror="this.parentElement.classList.remove('has-img')">` : ''}
-      <div class="vc-cover vc-cover-ph">${ic('film', 20)}</div>
+      <div class="vc-cover vc-cover-ph">${ic(f.isAudio ? 'music' : 'film', 20)}</div>
       <span class="vc-fmt">${fmt}</span>
     </div>
     <div class="vc-body">
@@ -926,8 +927,8 @@ function renderToolsPanel() {
         <div class="vc-item" data-path="${esc(f.path)}" onclick="selectToolFile(this)">
           <div class="vc-cover-wrap${roomCoverOf(f.uploader) ? ' has-img' : ''}">
             ${roomCoverOf(f.uploader) ? `<img class="vc-cover" src="${esc(imgUrl(roomCoverOf(f.uploader)))}" referrerpolicy="no-referrer" alt="" onerror="this.parentElement.classList.remove('has-img')">` : ''}
-            <div class="vc-cover vc-cover-ph">${ic('film',20)}</div>
-            <span class="vc-fmt">${f.isFlv?'FLV':'MP4'}</span>
+            <div class="vc-cover vc-cover-ph">${ic(f.isAudio?'music':'film',20)}</div>
+            <span class="vc-fmt">${f.isFlv?'FLV':f.isAudio?'音频':'MP4'}</span>
           </div>
           <div class="vc-body">
             <div class="vc-title">${esc(f.name)}</div>
@@ -944,6 +945,7 @@ function renderToolsPanel() {
       · 快速转封装：flv→mp4，-c copy 不重编码，最快<br>
       · 修复损坏：忽略错误重封装，处理录制中断的文件<br>
       · 完整转码：H.264 重编码,修复时间轴/编码问题，较慢<br>
+      · 音频文件(m4a)同样可修复损坏（-c copy 重封装/重编码兜底）<br>
       · 任务按顺序排队执行，可取消/重试/删除</div>
     <h2>任务列表</h2>
     <div class="repair-tasks" id="repairTasks"><div class="sb-empty">暂无任务</div></div>
@@ -1033,7 +1035,7 @@ function renderFileDetail(path, container) {
     if(!f){ state.selectedFile=null; renderEditor(); return; }  // 文件已删除：回列表
     body.innerHTML=`<div class="view">
       <div class="detail-title">${esc(f.name)}</div>
-      <div class="detail-meta">${esc(f.uploader)} · ${f.isFlv?'FLV':'MP4'}</div>
+      <div class="detail-meta">${esc(f.uploader)} · ${f.isAudio?'音频':(f.isFlv?'FLV':'MP4')}</div>
       <div class="stat-grid">
         <div class="stat-card"><div class="sc-label">大小</div><div class="sc-value">${fmtSize(f.size)}</div></div>
         <div class="stat-card"><div class="sc-label">时间</div><div class="sc-value">${fmtDate(f.mtime)}</div></div></div>
