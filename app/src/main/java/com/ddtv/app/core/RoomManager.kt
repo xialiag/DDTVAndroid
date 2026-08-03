@@ -305,7 +305,7 @@ object RoomManager {
         migratePlaceholderFolder(card)
     }
 
-    /** 把“房间 <id>”占位目录迁移为真实主播名目录（名字晚到时补迁；录制中不迁，结束后下轮轮询再迁） */
+    /** 把“房间 <id>/Room<id>”占位目录迁移为真实主播名目录；目标已存在时合并内容（录制中不迁，结束后触发） */
     private fun migratePlaceholderFolder(card: RoomCard) {
         val name = card.name.trim()
         if (name.isEmpty() || name.startsWith("房间 ") || name.startsWith("Room")) return
@@ -313,16 +313,36 @@ object RoomManager {
         val root = outputDir
         if (!root.isDirectory) return
         val target = java.io.File(root, sanitizeFileName(name))
-        if (target.exists()) return
         listOf("房间 ${card.roomId}", "Room${card.roomId}").forEach { old ->
             val oldDir = java.io.File(root, old)
-            if (oldDir.isDirectory) {
-                try {
+            if (!oldDir.isDirectory) return@forEach
+            try {
+                if (!target.exists()) {
                     if (oldDir.renameTo(target)) {
                         Logger.i("Room", "录制目录已改名: $old → ${target.name}")
                     }
-                } catch (_: Exception) {}
-            }
+                } else {
+                    // 目标已存在（名字就绪后录过新段）：把占位目录内容合并进目标，同名文件保留目标
+                    oldDir.listFiles()?.forEach { child ->
+                        val dest = java.io.File(target, child.name)
+                        if (child.isDirectory) {
+                            if (!dest.exists()) {
+                                child.renameTo(dest)
+                            } else {
+                                child.listFiles()?.forEach { f ->
+                                    val d2 = java.io.File(dest, f.name)
+                                    if (!d2.exists()) f.renameTo(d2)
+                                }
+                            }
+                        } else {
+                            if (!dest.exists()) child.renameTo(dest)
+                        }
+                    }
+                    if (oldDir.listFiles()?.isEmpty() == true && oldDir.delete()) {
+                        Logger.i("Room", "录制目录已合并: $old → ${target.name}")
+                    }
+                }
+            } catch (_: Exception) {}
         }
     }
 
@@ -440,6 +460,7 @@ object RoomManager {
     fun recordHistory(card: RoomCard, files: List<String>) {
         if (files.isEmpty()) return
         addHistory(card, files)
+        migratePlaceholderFolder(card)  // 录制刚结束：立刻迁移占位目录，不等下一轮轮询
     }
 
     // ============ 录制历史（对应原版 Detect.histories + HistoryPage） ============

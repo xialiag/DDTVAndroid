@@ -147,6 +147,9 @@ class MainActivity : AppCompatActivity() {
         // 启动前台服务
         startService(Intent(this, LiveService::class.java))
 
+        // 补提取：audioOnly 房间残留的未提取音频（进程被杀等场景），后台静默执行
+        com.ddtv.app.core.LiveRecorder.extractPendingAudioFiles()
+
         // 启动时打印 ffmpeg 引擎版本（调试日志：确认打包的是 v8 还是 v6）
         Thread({
             try {

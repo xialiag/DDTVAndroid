@@ -118,6 +118,33 @@ object LiveRecorder {
         }
     }
 
+    /**
+     * 启动时补提取：audioOnly 房间目录里残留的未提取音频（进程被杀/重启导致收尾未跑），
+     * 扫描 *_original.flv|mp4 且无对应 *_audio.m4a 的文件，后台提取为 m4a。
+     */
+    fun extractPendingAudioFiles() {
+        Thread({
+            try {
+                RoomManager.getRooms().filter { it.audioOnly }.forEach { card ->
+                    val dir = File(RoomManager.outputDir, sanitize(card.name.ifEmpty { "Room${card.roomId}" }))
+                    if (!dir.isDirectory) return@forEach
+                    dir.walkTopDown().forEach { f ->
+                        if (!f.isFile) return@forEach
+                        val n = f.name
+                        if (n.endsWith("_original.flv") || n.endsWith("_original.mp4")) {
+                            val m4a = f.absolutePath.substringBeforeLast('.') + "_audio.m4a"
+                            if (!File(m4a).exists()) {
+                                Logger.i("Recorder", "[${card.name}] 补提取音频: ${f.name}")
+                                val out = FFmpegRemux.extractAudio(f.absolutePath)
+                                if (out != null) Logger.i("Recorder", "[${card.name}] 补提取完成: ${File(out).name}")
+                            }
+                        }
+                    }
+                }
+            } catch (_: Exception) {}
+        }, "AudioBackfill").apply { isDaemon = true; start() }
+    }
+
     fun start(card: RoomCard): Boolean {
         synchronized(running) {
             if (running.containsKey(card.roomId)) return false
@@ -312,7 +339,20 @@ object LiveRecorder {
      * 支持关键字：{ROOMID} {NAME} {TITLE} {DATE}(yyyy_MM_dd) {TIME}(HH_mm_ss) {YYYY} {YY} {MM} {DD} {HH} {mm} {SS} {FFF}
      */
     private fun newSegmentFile(card: RoomCard, ext: String): String {
-        val dir = File(outputRoot, sanitize(card.name.ifEmpty { "Room${card.roomId}" }) +
+        var name = card.name.trim()
+        // 名字未就绪(占位)时同步拉一次详情：彻底避免产生 Room<id>/房间 <id> 占位目录（失败才 fallback）
+        if (name.isEmpty() || name.startsWith("房间 ") || name.startsWith("Room")) {
+            try {
+                val d = BiliLiveApi.getRoomDetail(card.roomId)
+                if (d != null && d.uploader.isNotBlank()) {
+                    card.name = d.uploader
+                    if (card.title.isBlank()) card.title = d.title
+                    if (card.cover.isBlank()) card.cover = d.cover
+                    name = d.uploader.trim()
+                }
+            } catch (_: Exception) {}
+        }
+        val dir = File(outputRoot, sanitize(name.ifEmpty { "Room${card.roomId}" }) +
                 File.separator + SimpleDateFormat("yyyy-MM-dd", Locale.CHINA).format(Date()))
         dir.mkdirs()
         val now = Date()
