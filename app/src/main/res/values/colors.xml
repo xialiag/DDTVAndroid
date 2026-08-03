@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- B站粉主题色 -->
+    <color name="bili_pink">#FB7299</color>
+    <color name="bili_pink_dark">#D94F78</color>
+    <color name="vscode_bg">#1E1E1E</color>
+    <color name="vscode_sidebar">#252526</color>
+    <color name="vscode_titlebar">#3C3C3C</color>
+    <color name="ic_launcher_bg">#FB7299</color>
+    <color name="white">#FFFFFF</color>
+</resources>
