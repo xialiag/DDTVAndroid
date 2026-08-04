@@ -743,6 +743,13 @@ input::placeholder{color:var(--fg-dim);opacity:.9}
 .file-manage-bar .fm-actions{display:flex;align-items:center;gap:8px;flex-shrink:0}
 /* 删除按钮禁用：灰底实心，与“未选”状态呼应，而非半透明 */
 .file-manage-bar .btn-danger:disabled{background:var(--border-light);color:var(--fg-dim);opacity:1;filter:none}
+/* --- 搜索 UP 添加直播间 --- */
+.sr-input-row{border-top:none;padding:12px 14px 4px}
+.search-result{display:flex;flex-direction:column;gap:8px;padding:4px 14px 44px;max-width:1000px;margin:0 auto}
+.search-result .vc-item{padding:10px 12px}
+.search-result .vc-item .btn{flex-shrink:0}
+.sr-avatar{width:40px;height:40px;border-radius:50%;background:var(--bg-input);
+  overflow:hidden;flex:0 0 auto;position:relative;border:1px solid var(--border-light)}
 /* 侧边栏卡片：更紧凑，副标题让位给列表密度 */
 #sidebarBody .task-item{min-height:76px;padding:10px 12px;border-radius:var(--r-md);margin-bottom:6px}
 #sidebarBody .task-item .ti-index{top:8px;left:12px}

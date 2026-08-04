@@ -104,6 +104,7 @@ class MainActivity : AppCompatActivity() {
 
         // 初始化核心
         RoomManager.init(this)
+        com.ddtv.app.core.CoverCache.init(this)
         AccountManager.init(this)
         Logger.init(this)
         // 全局崩溃捕获（BBDownAndroid 同款：崩溃日志写 logs/crash_*.txt，DebugServer/设置页可查看）

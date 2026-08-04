@@ -112,6 +112,54 @@ class DDTVBridge(private val context: Context, private val webView: WebView) {
         RoomManager.updateRoom(roomId) { it.audioOnly = on }
     }
 
+    // ============ UP 搜索添加直播间 ============
+
+    /** 按 UP 名搜索直播间，返回 JSON 数组 */
+    @JavascriptInterface
+    fun searchLiveUsers(keyword: String): String {
+        val arr = JSONArray()
+        try {
+            com.ddtv.app.core.BiliLiveApi.searchLiveUsers(keyword).forEach { u ->
+                arr.put(JSONObject().apply {
+                    put("roomId", u.roomId)
+                    put("uid", u.uid)
+                    put("uname", u.uname)
+                    put("face", u.face)
+                    put("liveStatus", u.liveStatus)
+                    put("title", u.title)
+                    put("online", u.online)
+                    put("shortId", u.shortId)
+                })
+            }
+        } catch (_: Exception) {}
+        return arr.toString()
+    }
+
+    /** 添加搜索结果房间（名字/头像直接入库，无需 room_init 补全） */
+    @JavascriptInterface
+    fun addRoomFromSearch(json: String): String {
+        return try {
+            val o = JSONObject(json)
+            val u = com.ddtv.app.core.SearchLiveUser(
+                roomId = o.optLong("roomId"),
+                uid = o.optLong("uid"),
+                uname = o.optString("uname"),
+                face = o.optString("face"),
+                liveStatus = o.optInt("liveStatus"),
+                title = o.optString("title"),
+                online = o.optLong("online"),
+                shortId = o.optLong("shortId"),
+            )
+            when (com.ddtv.app.core.RoomManager.addRoomFromSearch(u)) {
+                1 -> """{"code":1,"msg":"已添加"}"""
+                0 -> """{"code":0,"msg":"房间已存在"}"""
+                else -> """{"code":-1,"msg":"该UP主暂无直播间"}"""
+            }
+        } catch (e: Exception) {
+            """{"code":-1,"msg":"${e.message}"}"""
+        }
+    }
+
     /**
      * 打开直播间观看（对应原版 Desktop 播放窗口）：
      * 优先 B站 App 深链 bilibili://live/{roomId}，失败则用浏览器打开网页版
@@ -361,15 +409,16 @@ class DDTVBridge(private val context: Context, private val webView: WebView) {
                                             put("uploader", liver.name)
                                             put("isFlv", f.name.endsWith(".flv"))
                                             put("isAudio", isAudio)
-                                            // 封面：同目录保存的 _cover.jpg（LiveRecorder.saveCoverIfNeeded），
-                                            // 转 content:// URI 供 WebView 加载（不依赖监控房间列表/网络）
+                                            // 封面优先级：同目录 _cover.jpg（视频录制时保存）→ m4a 元数据嵌入封面（提取后缓存）
                                             val cover = java.io.File(f.absolutePath.substringBeforeLast('.') + "_cover.jpg")
-                                            if (cover.exists()) {
+                                            val coverUri = if (cover.exists()) {
                                                 try {
-                                                    put("coverPath", androidx.core.content.FileProvider.getUriForFile(
-                                                        context, "com.ddtv.app.fileprovider", cover).toString())
-                                                } catch (_: Exception) {}
-                                            }
+                                                    androidx.core.content.FileProvider.getUriForFile(
+                                                        context, "com.ddtv.app.fileprovider", cover).toString()
+                                                } catch (_: Exception) { null }
+                                            } else null
+                                            if (coverUri != null) put("coverPath", coverUri)
+                                            else if (isAudio) audioCoverUri(f)?.let { put("coverPath", it) }
                                         })
                                     }
                                 }
@@ -382,6 +431,41 @@ class DDTVBridge(private val context: Context, private val webView: WebView) {
             Logger.w("Bridge", "getRecordFiles 失败: ${e.message}")
         }
         return arr.toString()
+    }
+
+    /** m4a 元数据嵌入封面：MediaMetadataRetriever 提取 → 缓存文件（key=路径|mtime，0 字节=无封面负缓存不重试） */
+    private fun audioCoverUri(f: java.io.File): String? {
+        return try {
+            val key = "audio|${f.absolutePath}|${f.lastModified()}"
+            val cf = com.ddtv.app.core.CoverCache.cacheFile(key) ?: return null
+            if (cf.exists()) {
+                return if (cf.length() > 0) com.ddtv.app.core.CoverCache.uriFor(context, cf) else null
+            }
+            val mmr = android.media.MediaMetadataRetriever()
+            try {
+                mmr.setDataSource(f.absolutePath)
+                val pic = mmr.embeddedPicture
+                if (pic != null && pic.isNotEmpty()) {
+                    com.ddtv.app.core.CoverCache.writeCache(key, pic)
+                        ?.let { return com.ddtv.app.core.CoverCache.uriFor(context, it) }
+                }
+                com.ddtv.app.core.CoverCache.writeCache(key, ByteArray(0))
+                null
+            } finally {
+                try { mmr.release() } catch (_: Exception) {}
+            }
+        } catch (_: Exception) { null }
+    }
+
+    /** 网络封面 → 本地缓存 URI（未缓存则返回原 URL 并后台拉取，下轮轮询自动换本地） */
+    private fun coverImage(url: String): String {
+        if (url.isBlank() || !url.startsWith("http")) return url
+        val f = com.ddtv.app.core.CoverCache.cachedFile(url)
+        if (f != null) return com.ddtv.app.core.CoverCache.uriFor(context, f) ?: url
+        com.ddtv.app.core.CoverCache.cacheAsync(url) { done ->
+            if (done != null) com.ddtv.app.core.Logger.i("Cache", "封面已缓存: ${url.take(80)}")
+        }
+        return url
     }
 
     @JavascriptInterface
@@ -1195,10 +1279,10 @@ class DDTVBridge(private val context: Context, private val webView: WebView) {
             put("shortId", card.shortId)
             put("uid", card.uid)
             put("name", card.name)
-            put("face", card.face)
+            put("face", coverImage(card.face))
             put("sign", card.sign)
             put("title", card.title)
-            put("cover", card.cover)
+            put("cover", coverImage(card.cover))
             put("liveStatus", card.liveStatus)
             put("liveTime", card.liveTime)
             put("areaName", card.areaName)

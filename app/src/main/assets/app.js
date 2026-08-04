@@ -41,6 +41,7 @@ const ICONS = {
   close:'M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z',
   send:'M2.01 21L23 12 2.01 3 2 10l15 2-15 2z',
   check:'M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z',
+  search:'M15.5 14h-.79l-.28-.27A6.471 6.471 0 0 0 16 9.5 6.5 6.5 0 1 0 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19l-4.99-5zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14z',
   file:'M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8l-6-6zm2 16H8v-2h8v2zm0-4H8v-2h8v2zm-3-5V3.5L18.5 9H13z',
   folder:'M10 4H4a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-8l-2-2z',
   bolt:'M11 21h-1l1-7H7.5c-.58 0-.57-.32-.38-.66.19-.34.05-.08.07-.12C8.48 10.94 10.42 7.54 13 3h1l-1 7h3.5c.49 0 .56.33.47.51l-.07.15C12.96 17.55 11 21 11 21z',
@@ -223,6 +224,7 @@ function switchView(view) {
   document.querySelectorAll('.ab-btn').forEach(b => b.classList.toggle('active', b.dataset.view === view));
   $('#sidebarTitle').textContent = VIEW_TITLES[view] || '';
   $('#btnAddRoom').style.display = view === 'explorer' ? '' : 'none';
+  $('#btnSearchRoom').style.display = view === 'explorer' ? '' : 'none';
   renderSidebar(); renderEditor();
 }
 
@@ -495,7 +497,10 @@ function renderEditor() {
   _subnavKey = '';  // 主视图重置二级页返回头状态
   if (v === 'explorer') {
     tabs.innerHTML = '<div class="tab active">直播监控</div>';
-    if (!state.rooms.length) { body.innerHTML = `<div class="detail-empty"><div class="empty-icon">${ic('plus',28)}</div>
+    if (state._roomSearch) {
+      renderRoomSearch();
+      return;
+    } else if (!state.rooms.length) { body.innerHTML = `<div class="detail-empty"><div class="empty-icon">${ic('plus',28)}</div>
       <div class="empty-hint-title">暂无房间</div><div class="empty-hint-sub">点击右上角 ＋ 添加</div></div>`; return; }
     if (state._detailOpen && state.currentRoom && state.rooms.find(r=>r.roomId===state.currentRoom)) {
       // 详情页：返回按钮回列表
@@ -1803,8 +1808,66 @@ function deleteFile(path) {
 }
 function remuxFile(path) { const r=JSON.parse(AndroidBridge.remuxFile(path)); toast(r.msg,r.code<0?'err':'ok'); }
 
-function promptAddRoom() {
-  showModal({ title:'添加房间', msg:'输入直播间房间号 / 短号 / UID', input:true,
+/* ========== 搜索 UP 添加直播间 ========== */
+function openRoomSearch() {
+  state._roomSearch = true;
+  state._detailOpen = false;
+  state.currentRoom = null;
+  switchView('explorer');
+}
+function renderRoomSearch() {
+  const body = $('#editorBody');
+  subHeader('搜索UP', "state._roomSearch=false;renderEditor()");
+  body.innerHTML = `<div class="view">
+    <div class="dm-input-row sr-input-row">
+      <input id="roomSearchInput" class="dm-input" placeholder="输入UP主昵称 / 直播间名" maxlength="40">
+      <button class="btn btn-primary" id="roomSearchBtn" onclick="doRoomSearch()">${ic('search',14)} 搜索</button>
+    </div>
+    <div id="roomSearchResult" class="search-result"><div class="sb-empty">搜索 UP 名后点击结果添加直播间</div></div>
+  </div>`;
+  const inp = $('#roomSearchInput');
+  inp.focus();
+  inp.onkeydown = e => { if (e.key === 'Enter') doRoomSearch(); };
+}
+function doRoomSearch() {
+  const kw = $('#roomSearchInput').value.trim();
+  if (!kw) { toast('请输入UP主昵称','warn'); return; }
+  const btn = $('#roomSearchBtn');
+  const box = $('#roomSearchResult');
+  if (!box) return;
+  if (btn) btn.disabled = true;
+  box.innerHTML = '<div class="sb-empty">搜索中…</div>';
+  let items = [];
+  try { items = JSON.parse(AndroidBridge.searchLiveUsers(kw)); } catch(e) {}
+  if (btn) btn.disabled = false;
+  state._searchResults = items;
+  if (!items.length) { box.innerHTML = '<div class="sb-empty">没有找到相关UP主，试试更精确的名字</div>'; return; }
+  box.innerHTML = items.map(u => `
+    <div class="vc-item" data-rid="${u.roomId}">
+      <div class="sr-avatar">${avatarHtml(u.face, u.uname)}</div>
+      <div class="vc-body">
+        <div class="vc-title">${esc(u.uname)}</div>
+        <div class="vc-meta"><span class="${u.liveStatus===1?'txt-accent':''}">${u.liveStatus===1?'● 直播中':(u.liveStatus===2?'● 轮播中':'未开播')}</span>${u.title?`<span>${esc(u.title)}</span>`:''}</div>
+      </div>
+      <button class="btn btn-primary btn-sm" onclick="addRoomBySearch(this)">添加</button>
+    </div>`).join('');
+}
+function addRoomBySearch(btn) {
+  const rid = Number(btn.closest('.vc-item').dataset.rid);
+  const u = (state._searchResults||[]).find(x => x.roomId === rid);
+  if (!u) return;
+  let r = null;
+  try { r = JSON.parse(AndroidBridge.addRoomFromSearch(JSON.stringify(u))); } catch(e) { r = { code:-1, msg:'添加失败: '+e }; }
+  toast(r.msg, r.code<0?'err':'ok');
+  if (r.code >= 0) {
+    state._roomSearch = false;
+    state._detailOpen = false;
+    refreshRooms();  // 新房间立即进列表（否则 state.rooms 还是旧数据）
+    renderEditor();
+  }
+}
+
+function promptAddRoom() {  showModal({ title:'添加房间', msg:'输入直播间房间号 / 短号 / UID', input:true,
     placeholder:'如：123456 或 房间短号', okText:'添加',
     onOk:(val)=>{ if(!val) return; addRoomInput(val.trim()); } });
 }
@@ -1817,6 +1880,7 @@ function addRoomInput(input) {
 /* ========== 初始化 ========== */
 function init() {
   $('#btnAddRoom').onclick = promptAddRoom;
+  $('#btnSearchRoom').onclick = openRoomSearch;
   $('#btnTheme').onclick = cycleTheme;
   document.querySelectorAll('.ab-btn').forEach(b => { b.onclick = () => switchView(b.dataset.view); });
   try{state.settings=JSON.parse(AndroidBridge.getSettings());}catch(e){}
