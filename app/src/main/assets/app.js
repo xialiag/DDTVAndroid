@@ -1438,7 +1438,12 @@ function pickOutputDir() {
 /* ========== 权限（设置页手动授权） ========== */
 const PERM_LABELS = { notification:'通知', storage:'存储', battery:'电池' };
 function requestPerm(type) {
-  try { AndroidBridge.requestPermission(type); } catch(e){ toast('无法请求权限: '+e,'err'); }
+  try {
+    // 已授权时系统不会再弹窗（Android 行为），直接提示，避免点了没反应
+    const st = JSON.parse(AndroidBridge.getPermissionStatus(type));
+    if (st.granted) { toast((PERM_LABELS[type]||type)+'权限已开启','ok'); refreshPermStatus(); return; }
+    AndroidBridge.requestPermission(type);
+  } catch(e){ toast('无法请求权限: '+e,'err'); }
   setTimeout(refreshPermStatus, 1500);  // 从系统授权页回来后刷新状态
 }
 function refreshPermStatus() {
@@ -1827,5 +1832,25 @@ function init() {
 }
 init();
 
-/* 系统返回键（由 MainActivity 调用）：无抽屉后直接返回 false，由系统处理退出 */
-window.__back = function() { return false; };
+/* 系统返回键（由 MainActivity 调用）：按优先级处理应用内导航，
+ * 弹层 → 长按菜单 → 管理模式 → 二级页返回；全部处理完（主界面）返回 false，
+ * Kotlin 侧据此 finish() 退出应用 */
+window.__back = function() {
+  // 1. 模态框：等同点取消/遮罩关闭
+  const modal = $('#modal');
+  if (modal && !modal.classList.contains('hidden')) { closeModal(); return true; }
+  // 2. 长按管理菜单
+  const m = $('#ctxMenu');
+  if (m && !m.classList.contains('hidden')) { hideRoomMenu(); return true; }
+  // 3. 自定义下拉展开
+  const cs = document.querySelector('.cselect.open');
+  if (cs) { cs.classList.remove('open'); return true; }
+  // 4. 文件批量管理模式 → 退出管理
+  if (state._fileManage) { toggleFileManage(); return true; }
+  // 5. 录制历史批量管理 → 退出管理
+  if (_histManage) { exitHistManage(); return true; }
+  // 6. 二级页（房间详情/文件详情/登录子页等）→ 触发返回头按钮
+  const back = document.querySelector('#tabs .sn-back');
+  if (back) { back.click(); return true; }
+  return false;
+};

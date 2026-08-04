@@ -131,10 +131,6 @@ class MainActivity : AppCompatActivity() {
             }
         }
 
-        // 权限：通知（Android 13+）
-        requestNotificationPermission()
-        requestBatteryExemption()
-
         // 挂接事件 → JS
         RoomManager.addListener(uiRoomListener)
         LiveRecorder.addListener(uiRecorderListener)
@@ -173,13 +169,12 @@ class MainActivity : AppCompatActivity() {
             }
         }, 5000)
 
-        // 返回键：先关闭编辑器页面栈（VSCode 式标签页），栈空则退出
+        // 返回键：先交 JS 处理应用内导航（弹层→菜单→管理模式→二级页返回），
+        // JS 返回 false 表示已到主界面无可返回，此时才退出应用
         onBackPressedDispatcher.addCallback(this, object : OnBackPressedCallback(true) {
             override fun handleOnBackPressed() {
-                if (bridge.currentPageDepth() > 0) {
-                    webView.evaluateJavascript("window.__back && window.__back()", null)
-                } else {
-                    finish()
+                webView.evaluateJavascript("(window.__back ? (window.__back() ? '1' : '0') : '0')") { r ->
+                    if (r?.trim() != "\"1\"") finish()
                 }
             }
         })
@@ -274,12 +269,34 @@ class MainActivity : AppCompatActivity() {
         webView.webChromeClient = WebChromeClient()
     }
 
+    private var permissionRequested = false
+
+    override fun onResume() {
+        super.onResume()
+        if (!permissionRequested) {
+            permissionRequested = true
+            // onCreate 里 Activity 尚未 resume 时 requestPermissions 会被部分 ROM 静默丢弃，
+            // 移到首次 onResume 再弹；电池豁免设置页延后，避免抢焦点把通知授权弹窗顶掉
+            requestNotificationPermission()
+            webView.postDelayed({ requestBatteryExemption() }, 2500)
+        }
+    }
+
     private fun requestNotificationPermission() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
             if (ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS)
                 != PackageManager.PERMISSION_GRANTED) {
+                getSharedPreferences("ddtv_settings", Context.MODE_PRIVATE)
+                    .edit().putBoolean("notif_asked", true).apply()
                 ActivityCompat.requestPermissions(this, arrayOf(Manifest.permission.POST_NOTIFICATIONS), REQ_NOTIFICATION)
             }
+        }
+    }
+
+    override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<out String>, grantResults: IntArray) {
+        super.onRequestPermissionsResult(requestCode, permissions, grantResults)
+        if (requestCode == REQ_NOTIFICATION) {
+            Logger.i("Perm", "通知权限: " + if (grantResults.firstOrNull() == PackageManager.PERMISSION_GRANTED) "已授予" else "被拒绝")
         }
     }
 

@@ -53,18 +53,6 @@ class DDTVBridge(private val context: Context, private val webView: WebView) {
 
     // ============ 页面栈深度（Android 返回键） ============
 
-    /** JS 页面栈深度，返回键据此判断弹页还是退出 */
-    private var pageDepth = 0
-
-    @JavascriptInterface
-    fun setPageDepth(depth: Int) {
-        pageDepth = depth.coerceAtLeast(0)
-    }
-
-    fun currentPageDepth(): Int = pageDepth
-
-    // ============ 房间 ============
-
     @JavascriptInterface
     fun getRooms(): String {
         val arr = JSONArray()
@@ -924,8 +912,25 @@ class DDTVBridge(private val context: Context, private val webView: WebView) {
             when (type) {
                 "notification" -> act.runOnUiThread {
                     if (android.os.Build.VERSION.SDK_INT >= 33) {
-                        androidx.core.app.ActivityCompat.requestPermissions(
-                            act, arrayOf(android.Manifest.permission.POST_NOTIFICATIONS), 1006)
+                        val granted = androidx.core.content.ContextCompat.checkSelfPermission(
+                            act, android.Manifest.permission.POST_NOTIFICATIONS) ==
+                            android.content.pm.PackageManager.PERMISSION_GRANTED
+                        if (granted) return@runOnUiThread  // 已授权：JS 侧已先查状态并提示
+                        val prefs = act.getSharedPreferences("ddtv_settings", android.content.Context.MODE_PRIVATE)
+                        val asked = prefs.getBoolean("notif_asked", false)
+                        if (asked && !androidx.core.app.ActivityCompat.shouldShowRequestPermissionRationale(
+                                act, android.Manifest.permission.POST_NOTIFICATIONS)) {
+                            // 拒绝过且系统不再弹窗（don't ask again）→ 引导去系统通知设置页
+                            try {
+                                act.startActivity(android.content.Intent(
+                                    android.provider.Settings.ACTION_APP_NOTIFICATION_SETTINGS)
+                                    .putExtra(android.provider.Settings.EXTRA_APP_PACKAGE, act.packageName))
+                            } catch (_: Exception) {}
+                        } else {
+                            prefs.edit().putBoolean("notif_asked", true).apply()
+                            androidx.core.app.ActivityCompat.requestPermissions(
+                                act, arrayOf(android.Manifest.permission.POST_NOTIFICATIONS), 1006)
+                        }
                     }
                 }
                 "battery" -> act.runOnUiThread {

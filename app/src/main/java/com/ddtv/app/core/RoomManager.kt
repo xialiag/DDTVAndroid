@@ -835,6 +835,16 @@ object RoomManager {
                     put("roomId", card.roomId)
                     put("shortId", card.shortId)
                     put("uid", card.uid)
+                    // 展示信息一并持久化：否则进程重启后列表回退“房间 xxx”占位，要等轮询才补回名字/封面
+                    put("name", card.name)
+                    put("face", card.face)
+                    put("sign", card.sign)
+                    put("title", card.title)
+                    put("cover", card.cover)
+                    put("areaId", card.areaId)
+                    put("areaName", card.areaName)
+                    put("popularity", card.popularity)
+                    put("liveStatus", card.liveStatus)
                     put("autoRecord", card.autoRecord)
                     put("quality", card.quality)
                     put("danmakuOpen", card.danmakuOpen)
@@ -860,6 +870,15 @@ object RoomManager {
                     roomId = Json.objLong(o, "roomId"),
                     shortId = Json.objLong(o, "shortId"),
                     uid = Json.objLong(o, "uid"),
+                    name = Json.obj(o, "name").ifEmpty { "房间 ${Json.objLong(o, "roomId")}" },
+                    face = Json.obj(o, "face"),
+                    sign = Json.obj(o, "sign"),
+                    title = Json.obj(o, "title"),
+                    cover = Json.obj(o, "cover"),
+                    areaId = Json.objLong(o, "areaId"),
+                    areaName = Json.obj(o, "areaName"),
+                    popularity = Json.objLong(o, "popularity"),
+                    liveStatus = Json.objInt(o, "liveStatus", 0),
                     autoRecord = Json.objBool(o, "autoRecord", true),
                     quality = Json.objInt(o, "quality", 10000),
                     danmakuOpen = Json.objBool(o, "danmakuOpen", true),
@@ -867,7 +886,6 @@ object RoomManager {
                     audioOnly = Json.objBool(o, "audioOnly", false),
                     cutSeconds = Json.objLong(o, "cutSeconds", 0),
                     cutSizeMB = Json.objLong(o, "cutSizeMB", 0),
-                    name = "房间 ${Json.objLong(o, "roomId")}",
                     liveStatusPrev = Json.objInt(o, "liveStatus", 0) == 1,
                 )
                 rooms[card.roomId] = card
