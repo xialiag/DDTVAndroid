@@ -164,6 +164,39 @@ object BiliLiveApi {
         }
     }
 
+    /** 按 UP 名搜索直播间（search_type=live_user，返回带房间号/UID/头像的结果） */
+    fun searchLiveUsers(keyword: String, page: Int = 1): List<SearchLiveUser> {
+        val list = mutableListOf<SearchLiveUser>()
+        if (keyword.isBlank()) return list
+        try {
+            val url = "$MAIN_DOMAIN/x/web-interface/search/type?search_type=live_user&page=$page&keyword=" +
+                    java.net.URLEncoder.encode(keyword.trim(), "UTF-8")
+            val body = Http.get(url, referer = LIVE_WEB_DOMAIN)
+            val obj = JSONObject(body)
+            if (obj.optInt("code") != 0) {
+                Logger.w("Api", "UP 搜索失败: ${obj.optString("message")}")
+                return list
+            }
+            val result = obj.optJSONObject("data")?.optJSONArray("result") ?: return list
+            for (i in 0 until result.length()) {
+                val it = result.getJSONObject(i)
+                list.add(SearchLiveUser(
+                    roomId = it.optLong("roomid", 0),
+                    uid = it.optLong("uid", 0),
+                    uname = it.optString("uname", ""),
+                    face = it.optString("upic", ""),
+                    liveStatus = it.optInt("live_status", 0),
+                    title = it.optString("title", ""),
+                    online = it.optLong("online", 0),
+                    shortId = it.optLong("short_id", 0),
+                ))
+            }
+        } catch (e: Exception) {
+            Logger.w("Api", "UP 搜索异常: ${e.message}")
+        }
+        return list
+    }
+
     /** 通过 UID 查直播间（房间号未知时） */
     fun getRoomIdByUid(uid: Long): Long? {
         return try {

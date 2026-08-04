@@ -1,4 +1,4 @@
-/* ===== DDTV Android — UI 逻辑 v0.7.0 =====
+/* ===== DDTV Android — UI 逻辑 v0.7.1 =====
    结构:工具 → 图标 → 状态 → 主题 → 弹层 → 布局 → 各视图渲染 → 原生回调 → 操作 → 初始化
    模板规则:禁止内联样式(动态数据除外),一律用 app.css 里的类;图标用 ic() */
 'use strict';
@@ -41,6 +41,7 @@ const ICONS = {
   close:'M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z',
   send:'M2.01 21L23 12 2.01 3 2 10l15 2-15 2z',
   check:'M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z',
+  search:'M15.5 14h-.79l-.28-.27A6.471 6.471 0 0 0 16 9.5 6.5 6.5 0 1 0 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19l-4.99-5zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14z',
   file:'M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8l-6-6zm2 16H8v-2h8v2zm0-4H8v-2h8v2zm-3-5V3.5L18.5 9H13z',
   folder:'M10 4H4a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-8l-2-2z',
   bolt:'M11 21h-1l1-7H7.5c-.58 0-.57-.32-.38-.66.19-.34.05-.08.07-.12C8.48 10.94 10.42 7.54 13 3h1l-1 7h3.5c.49 0 .56.33.47.51l-.07.15C12.96 17.55 11 21 11 21z',
@@ -223,6 +224,7 @@ function switchView(view) {
   document.querySelectorAll('.ab-btn').forEach(b => b.classList.toggle('active', b.dataset.view === view));
   $('#sidebarTitle').textContent = VIEW_TITLES[view] || '';
   $('#btnAddRoom').style.display = view === 'explorer' ? '' : 'none';
+  $('#btnSearchRoom').style.display = view === 'explorer' ? '' : 'none';
   renderSidebar(); renderEditor();
 }
 
@@ -440,8 +442,7 @@ function bindFileList(container) {
     el.onclick = () => {
       if (state._fileManage) {
         // 管理模式：点击卡片 = 勾选/取消勾选，不进详情
-        const box = el.querySelector('.fc-box');
-        if (box) { box.checked = !box.checked; updateFileManageUI(); }
+        toggleFileSel(el.dataset.path, el);
         return;
       }
       state.selectedFile = el.dataset.path; renderSidebar(); renderEditor();
@@ -496,7 +497,10 @@ function renderEditor() {
   _subnavKey = '';  // 主视图重置二级页返回头状态
   if (v === 'explorer') {
     tabs.innerHTML = '<div class="tab active">直播监控</div>';
-    if (!state.rooms.length) { body.innerHTML = `<div class="detail-empty"><div class="empty-icon">${ic('plus',28)}</div>
+    if (state._roomSearch) {
+      renderRoomSearch();
+      return;
+    } else if (!state.rooms.length) { body.innerHTML = `<div class="detail-empty"><div class="empty-icon">${ic('plus',28)}</div>
       <div class="empty-hint-title">暂无房间</div><div class="empty-hint-sub">点击右上角 ＋ 添加</div></div>`; return; }
     if (state._detailOpen && state.currentRoom && state.rooms.find(r=>r.roomId===state.currentRoom)) {
       // 详情页：返回按钮回列表
@@ -515,7 +519,7 @@ function renderEditor() {
     tabs.innerHTML = '<div class="tab active">录制文件</div>';
     if (state.selectedFile) {
       // 详情管理页：返回按钮回列表
-      subHeader('录制文件', "state.selectedFile=null;state._fileManage=false;renderEditor()");
+      subHeader('录制文件', "state.selectedFile=null;state._fileManage=false;_fileSel.clear();renderEditor()");
       renderFileDetail(state.selectedFile);
     } else {
       renderFileListPage();
@@ -545,32 +549,51 @@ function renderFileListPage() {
   const body = $('#editorBody');
   body.innerHTML = `<div class="file-page-head">
       <span class="toolbar-text" id="fileCountText">共 ${(state.filesBest||state.files).length} 个文件</span>
-      <button class="btn btn-sec btn-sm" onclick="toggleFileManage()">${ic('check',12)} 管理</button></div>
+      <button class="btn ${state._fileManage?'btn-primary':'btn-sec'} btn-sm" onclick="toggleFileManage()">${ic('check',12)} ${state._fileManage?'完成':'管理'}</button></div>
     <div class="page-list">${buildFileListHtml()}</div>`;
   bindFileList(body.querySelector('.page-list'));
   if (state._fileManage) updateFileManageUI();  // 管理模式：给卡片加勾选框 + 底部操作栏
 }
-/* 批量管理：勾选删除 */
+/* ========== 录制文件批量管理 ========== */
+/* 选中集合以文件路径为 key：勾选框只是视觉呈现，真正状态存这里。
+ * 列表静默刷新会重建 DOM（录制中文件 size/mtime 变化触发），DOM 勾选必然丢失，
+ * 靠这个集合在重建后恢复勾选；计数与删除也从它取值，杜绝“显示 4/7 却提示未选择”。 */
+let _fileSel = new Set();
+/* 勾选/取消勾选（卡片点击与勾选框共用入口） */
+function toggleFileSel(path, card) {
+  if (_fileSel.has(path)) _fileSel.delete(path); else _fileSel.add(path);
+  if (card) card.classList.toggle('vc-checked', _fileSel.has(path));
+  const box = card && card.querySelector('.fc-box');
+  if (box) box.checked = _fileSel.has(path);
+  updateFileManageUI();
+}
 function toggleFileManage() {
   state._fileManage = !state._fileManage;
+  if (!state._fileManage) _fileSel.clear();
   renderEditor();
 }
 function updateFileManageUI() {
   const body = $('#editorBody');
   if (!state._fileManage) return;
-  // 卡片加勾选框 + 底部批量删除栏
+  // 编辑器卡片：补勾选框 + 选中态与 _fileSel 同步（重建后的卡片也能恢复选中）
   body.querySelectorAll('.page-list .vc-item').forEach(c => {
-    if (!c.querySelector('.fc-box')) {
-      const box = document.createElement('input');
+    const sel = _fileSel.has(c.dataset.path);
+    c.classList.toggle('vc-checked', sel);
+    let box = c.querySelector('.fc-box');
+    if (!box) {
+      box = document.createElement('input');
       box.type = 'checkbox';
       box.className = 'checkbox fc-box';
       box.dataset.path = c.dataset.path;
-      box.onchange = () => updateFileManageUI();  // 勾选即刷新计数
-      // 勾选框点击不冒泡（卡片 onclick 已切换勾选，避免双重切换）
+      box.onchange = () => toggleFileSel(box.dataset.path, box.closest('.vc-item'));
+      // 勾选框点击不冒泡（卡片 onclick 会切换勾选，避免双重切换）
       box.addEventListener('click', e => e.stopPropagation());
       c.prepend(box);
     }
+    box.checked = sel;
   });
+  // 侧边栏卡片同步选中态（宽屏时侧边栏同样可点选）
+  document.querySelectorAll('#sidebarBody .vc-item').forEach(c => c.classList.toggle('vc-checked', _fileSel.has(c.dataset.path)));
   let bar = body.querySelector('.file-manage-bar');
   if (!bar) {
     bar = document.createElement('div');
@@ -578,24 +601,36 @@ function updateFileManageUI() {
     body.appendChild(bar);
   }
   const total = body.querySelectorAll('.page-list .vc-item').length;
-  const checked = body.querySelectorAll('.fc-box:checked').length;
+  const checked = _fileSel.size;
   bar.innerHTML = `<button class="btn btn-sec btn-sm" onclick="selectAllFiles()">${ic('check',12)} 全选</button>
-    <span class="fm-count${checked ? ' has' : ''}">${checked}/${total}</span>
-    <button class="btn btn-danger btn-sm" ${checked?'':'disabled'} onclick="deleteSelectedFiles()">${ic('trash',12)} 删除所选</button>
-    <button class="btn btn-sec btn-sm" onclick="toggleFileManage()">完成</button>`;
+    <span class="fm-count${checked ? ' has' : ''}">已选 <b>${checked}</b>/${total}</span>
+    <div class="fm-actions">
+      <button class="btn btn-danger btn-sm" ${checked?'':'disabled'} onclick="deleteSelectedFiles()">${ic('trash',12)} 删除所选</button>
+      <button class="btn btn-primary btn-sm" onclick="toggleFileManage()">完成</button>
+    </div>`;
 }
 function selectAllFiles() {
-  document.querySelectorAll('#editorBody .fc-box').forEach(c => c.checked = true);
+  const cards = document.querySelectorAll('#editorBody .page-list .vc-item');
+  const selectAll = _fileSel.size !== cards.length;  // 已全选时再次点击 = 取消全选
+  _fileSel.clear();
+  if (selectAll) cards.forEach(c => _fileSel.add(c.dataset.path));
+  cards.forEach(c => {
+    const sel = _fileSel.has(c.dataset.path);
+    c.classList.toggle('vc-checked', sel);
+    const box = c.querySelector('.fc-box');
+    if (box) box.checked = sel;
+  });
   updateFileManageUI();
 }
 function deleteSelectedFiles() {
-  const paths = [...document.querySelectorAll('#editorBody .fc-box:checked')].map(c => c.dataset.path);
+  const paths = [..._fileSel];
   if (!paths.length) { toast('未选择文件','warn'); return; }
   showModal({ title:'批量删除', msg:`确认删除选中的 ${paths.length} 个文件吗？\n此操作不可恢复。`,
     okText:'删除', onOk:()=>{
       paths.forEach(p => { try { JSON.parse(AndroidBridge.deleteRecordFile(p)); } catch(e){} });
       state._fileManage = false;
       state.selectedFile = null;
+      _fileSel.clear();
       toast('已删除','ok');
       loadFiles(); renderEditor();
     } });
@@ -834,6 +869,12 @@ function updateFileListPageSilent() {
   list.classList.add('no-anim');
   list.innerHTML = buildFileListHtml();
   bindFileList(list);
+  // 静默重建会清掉卡片上的勾选框：管理模式恢复勾选（选中集合是权威状态）
+  if (state._fileManage) {
+    const alive = new Set([...list.querySelectorAll('.vc-item')].map(c => c.dataset.path));
+    for (const p of [..._fileSel]) if (!alive.has(p)) _fileSel.delete(p);
+    updateFileManageUI();
+  }
 }
 
 /* ========== 数据统计(对应原版 DefaultPage) ========== */
@@ -1402,7 +1443,12 @@ function pickOutputDir() {
 /* ========== 权限（设置页手动授权） ========== */
 const PERM_LABELS = { notification:'通知', storage:'存储', battery:'电池' };
 function requestPerm(type) {
-  try { AndroidBridge.requestPermission(type); } catch(e){ toast('无法请求权限: '+e,'err'); }
+  try {
+    // 已授权时系统不会再弹窗（Android 行为），直接提示，避免点了没反应
+    const st = JSON.parse(AndroidBridge.getPermissionStatus(type));
+    if (st.granted) { toast((PERM_LABELS[type]||type)+'权限已开启','ok'); refreshPermStatus(); return; }
+    AndroidBridge.requestPermission(type);
+  } catch(e){ toast('无法请求权限: '+e,'err'); }
   setTimeout(refreshPermStatus, 1500);  // 从系统授权页回来后刷新状态
 }
 function refreshPermStatus() {
@@ -1762,8 +1808,66 @@ function deleteFile(path) {
 }
 function remuxFile(path) { const r=JSON.parse(AndroidBridge.remuxFile(path)); toast(r.msg,r.code<0?'err':'ok'); }
 
-function promptAddRoom() {
-  showModal({ title:'添加房间', msg:'输入直播间房间号 / 短号 / UID', input:true,
+/* ========== 搜索 UP 添加直播间 ========== */
+function openRoomSearch() {
+  state._roomSearch = true;
+  state._detailOpen = false;
+  state.currentRoom = null;
+  switchView('explorer');
+}
+function renderRoomSearch() {
+  const body = $('#editorBody');
+  subHeader('搜索UP', "state._roomSearch=false;renderEditor()");
+  body.innerHTML = `<div class="view">
+    <div class="dm-input-row sr-input-row">
+      <input id="roomSearchInput" class="dm-input" placeholder="输入UP主昵称 / 直播间名" maxlength="40">
+      <button class="btn btn-primary" id="roomSearchBtn" onclick="doRoomSearch()">${ic('search',14)} 搜索</button>
+    </div>
+    <div id="roomSearchResult" class="search-result"><div class="sb-empty">搜索 UP 名后点击结果添加直播间</div></div>
+  </div>`;
+  const inp = $('#roomSearchInput');
+  inp.focus();
+  inp.onkeydown = e => { if (e.key === 'Enter') doRoomSearch(); };
+}
+function doRoomSearch() {
+  const kw = $('#roomSearchInput').value.trim();
+  if (!kw) { toast('请输入UP主昵称','warn'); return; }
+  const btn = $('#roomSearchBtn');
+  const box = $('#roomSearchResult');
+  if (!box) return;
+  if (btn) btn.disabled = true;
+  box.innerHTML = '<div class="sb-empty">搜索中…</div>';
+  let items = [];
+  try { items = JSON.parse(AndroidBridge.searchLiveUsers(kw)); } catch(e) {}
+  if (btn) btn.disabled = false;
+  state._searchResults = items;
+  if (!items.length) { box.innerHTML = '<div class="sb-empty">没有找到相关UP主，试试更精确的名字</div>'; return; }
+  box.innerHTML = items.map(u => `
+    <div class="vc-item" data-rid="${u.roomId}">
+      <div class="sr-avatar">${avatarHtml(u.face, u.uname)}</div>
+      <div class="vc-body">
+        <div class="vc-title">${esc(u.uname)}</div>
+        <div class="vc-meta"><span class="${u.liveStatus===1?'txt-accent':''}">${u.liveStatus===1?'● 直播中':(u.liveStatus===2?'● 轮播中':'未开播')}</span>${u.title?`<span>${esc(u.title)}</span>`:''}</div>
+      </div>
+      <button class="btn btn-primary btn-sm" onclick="addRoomBySearch(this)">添加</button>
+    </div>`).join('');
+}
+function addRoomBySearch(btn) {
+  const rid = Number(btn.closest('.vc-item').dataset.rid);
+  const u = (state._searchResults||[]).find(x => x.roomId === rid);
+  if (!u) return;
+  let r = null;
+  try { r = JSON.parse(AndroidBridge.addRoomFromSearch(JSON.stringify(u))); } catch(e) { r = { code:-1, msg:'添加失败: '+e }; }
+  toast(r.msg, r.code<0?'err':'ok');
+  if (r.code >= 0) {
+    state._roomSearch = false;
+    state._detailOpen = false;
+    refreshRooms();  // 新房间立即进列表（否则 state.rooms 还是旧数据）
+    renderEditor();
+  }
+}
+
+function promptAddRoom() {  showModal({ title:'添加房间', msg:'输入直播间房间号 / 短号 / UID', input:true,
     placeholder:'如：123456 或 房间短号', okText:'添加',
     onOk:(val)=>{ if(!val) return; addRoomInput(val.trim()); } });
 }
@@ -1776,6 +1880,7 @@ function addRoomInput(input) {
 /* ========== 初始化 ========== */
 function init() {
   $('#btnAddRoom').onclick = promptAddRoom;
+  $('#btnSearchRoom').onclick = openRoomSearch;
   $('#btnTheme').onclick = cycleTheme;
   document.querySelectorAll('.ab-btn').forEach(b => { b.onclick = () => switchView(b.dataset.view); });
   try{state.settings=JSON.parse(AndroidBridge.getSettings());}catch(e){}
@@ -1791,5 +1896,25 @@ function init() {
 }
 init();
 
-/* 系统返回键（由 MainActivity 调用）：无抽屉后直接返回 false，由系统处理退出 */
-window.__back = function() { return false; };
+/* 系统返回键（由 MainActivity 调用）：按优先级处理应用内导航，
+ * 弹层 → 长按菜单 → 管理模式 → 二级页返回；全部处理完（主界面）返回 false，
+ * Kotlin 侧据此 finish() 退出应用 */
+window.__back = function() {
+  // 1. 模态框：等同点取消/遮罩关闭
+  const modal = $('#modal');
+  if (modal && !modal.classList.contains('hidden')) { closeModal(); return true; }
+  // 2. 长按管理菜单
+  const m = $('#ctxMenu');
+  if (m && !m.classList.contains('hidden')) { hideRoomMenu(); return true; }
+  // 3. 自定义下拉展开
+  const cs = document.querySelector('.cselect.open');
+  if (cs) { cs.classList.remove('open'); return true; }
+  // 4. 文件批量管理模式 → 退出管理
+  if (state._fileManage) { toggleFileManage(); return true; }
+  // 5. 录制历史批量管理 → 退出管理
+  if (_histManage) { exitHistManage(); return true; }
+  // 6. 二级页（房间详情/文件详情/登录子页等）→ 触发返回头按钮
+  const back = document.querySelector('#tabs .sn-back');
+  if (back) { back.click(); return true; }
+  return false;
+};

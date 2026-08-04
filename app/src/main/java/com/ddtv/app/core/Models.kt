@@ -124,6 +124,18 @@ data class HistoryItem(
     var fileCount: Int = 0,
 )
 
+/** 按 UP 名搜索直播间结果（x/web-interface/search/type, search_type=live_user） */
+data class SearchLiveUser(
+    var roomId: Long = 0,        // 房间号（0 = 未开播过/无房间）
+    var uid: Long = 0,           // 主播 UID
+    var uname: String = "",      // 主播名
+    var face: String = "",       // 头像 URL
+    var liveStatus: Int = 0,     // 0未开播 1直播中 2轮播
+    var title: String = "",      // 直播间标题
+    var online: Long = 0,        // 人气
+    var shortId: Long = 0,       // 短号
+)
+
 /** 登录账号信息 */
 data class AccountInfo(
     var uid: Long = 0,
