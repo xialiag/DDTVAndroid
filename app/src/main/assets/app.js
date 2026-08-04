@@ -1,4 +1,4 @@
-/* ===== DDTV Android — UI 逻辑 v0.7.0 =====
+/* ===== DDTV Android — UI 逻辑 v0.7.1 =====
    结构:工具 → 图标 → 状态 → 主题 → 弹层 → 布局 → 各视图渲染 → 原生回调 → 操作 → 初始化
    模板规则:禁止内联样式(动态数据除外),一律用 app.css 里的类;图标用 ic() */
 'use strict';
@@ -440,8 +440,7 @@ function bindFileList(container) {
     el.onclick = () => {
       if (state._fileManage) {
         // 管理模式：点击卡片 = 勾选/取消勾选，不进详情
-        const box = el.querySelector('.fc-box');
-        if (box) { box.checked = !box.checked; updateFileManageUI(); }
+        toggleFileSel(el.dataset.path, el);
         return;
       }
       state.selectedFile = el.dataset.path; renderSidebar(); renderEditor();
@@ -515,7 +514,7 @@ function renderEditor() {
     tabs.innerHTML = '<div class="tab active">录制文件</div>';
     if (state.selectedFile) {
       // 详情管理页：返回按钮回列表
-      subHeader('录制文件', "state.selectedFile=null;state._fileManage=false;renderEditor()");
+      subHeader('录制文件', "state.selectedFile=null;state._fileManage=false;_fileSel.clear();renderEditor()");
       renderFileDetail(state.selectedFile);
     } else {
       renderFileListPage();
@@ -545,32 +544,51 @@ function renderFileListPage() {
   const body = $('#editorBody');
   body.innerHTML = `<div class="file-page-head">
       <span class="toolbar-text" id="fileCountText">共 ${(state.filesBest||state.files).length} 个文件</span>
-      <button class="btn btn-sec btn-sm" onclick="toggleFileManage()">${ic('check',12)} 管理</button></div>
+      <button class="btn ${state._fileManage?'btn-primary':'btn-sec'} btn-sm" onclick="toggleFileManage()">${ic('check',12)} ${state._fileManage?'完成':'管理'}</button></div>
     <div class="page-list">${buildFileListHtml()}</div>`;
   bindFileList(body.querySelector('.page-list'));
   if (state._fileManage) updateFileManageUI();  // 管理模式：给卡片加勾选框 + 底部操作栏
 }
-/* 批量管理：勾选删除 */
+/* ========== 录制文件批量管理 ========== */
+/* 选中集合以文件路径为 key：勾选框只是视觉呈现，真正状态存这里。
+ * 列表静默刷新会重建 DOM（录制中文件 size/mtime 变化触发），DOM 勾选必然丢失，
+ * 靠这个集合在重建后恢复勾选；计数与删除也从它取值，杜绝“显示 4/7 却提示未选择”。 */
+let _fileSel = new Set();
+/* 勾选/取消勾选（卡片点击与勾选框共用入口） */
+function toggleFileSel(path, card) {
+  if (_fileSel.has(path)) _fileSel.delete(path); else _fileSel.add(path);
+  if (card) card.classList.toggle('vc-checked', _fileSel.has(path));
+  const box = card && card.querySelector('.fc-box');
+  if (box) box.checked = _fileSel.has(path);
+  updateFileManageUI();
+}
 function toggleFileManage() {
   state._fileManage = !state._fileManage;
+  if (!state._fileManage) _fileSel.clear();
   renderEditor();
 }
 function updateFileManageUI() {
   const body = $('#editorBody');
   if (!state._fileManage) return;
-  // 卡片加勾选框 + 底部批量删除栏
+  // 编辑器卡片：补勾选框 + 选中态与 _fileSel 同步（重建后的卡片也能恢复选中）
   body.querySelectorAll('.page-list .vc-item').forEach(c => {
-    if (!c.querySelector('.fc-box')) {
-      const box = document.createElement('input');
+    const sel = _fileSel.has(c.dataset.path);
+    c.classList.toggle('vc-checked', sel);
+    let box = c.querySelector('.fc-box');
+    if (!box) {
+      box = document.createElement('input');
       box.type = 'checkbox';
       box.className = 'checkbox fc-box';
       box.dataset.path = c.dataset.path;
-      box.onchange = () => updateFileManageUI();  // 勾选即刷新计数
-      // 勾选框点击不冒泡（卡片 onclick 已切换勾选，避免双重切换）
+      box.onchange = () => toggleFileSel(box.dataset.path, box.closest('.vc-item'));
+      // 勾选框点击不冒泡（卡片 onclick 会切换勾选，避免双重切换）
       box.addEventListener('click', e => e.stopPropagation());
       c.prepend(box);
     }
+    box.checked = sel;
   });
+  // 侧边栏卡片同步选中态（宽屏时侧边栏同样可点选）
+  document.querySelectorAll('#sidebarBody .vc-item').forEach(c => c.classList.toggle('vc-checked', _fileSel.has(c.dataset.path)));
   let bar = body.querySelector('.file-manage-bar');
   if (!bar) {
     bar = document.createElement('div');
@@ -578,24 +596,36 @@ function updateFileManageUI() {
     body.appendChild(bar);
   }
   const total = body.querySelectorAll('.page-list .vc-item').length;
-  const checked = body.querySelectorAll('.fc-box:checked').length;
+  const checked = _fileSel.size;
   bar.innerHTML = `<button class="btn btn-sec btn-sm" onclick="selectAllFiles()">${ic('check',12)} 全选</button>
-    <span class="fm-count${checked ? ' has' : ''}">${checked}/${total}</span>
-    <button class="btn btn-danger btn-sm" ${checked?'':'disabled'} onclick="deleteSelectedFiles()">${ic('trash',12)} 删除所选</button>
-    <button class="btn btn-sec btn-sm" onclick="toggleFileManage()">完成</button>`;
+    <span class="fm-count${checked ? ' has' : ''}">已选 <b>${checked}</b>/${total}</span>
+    <div class="fm-actions">
+      <button class="btn btn-danger btn-sm" ${checked?'':'disabled'} onclick="deleteSelectedFiles()">${ic('trash',12)} 删除所选</button>
+      <button class="btn btn-primary btn-sm" onclick="toggleFileManage()">完成</button>
+    </div>`;
 }
 function selectAllFiles() {
-  document.querySelectorAll('#editorBody .fc-box').forEach(c => c.checked = true);
+  const cards = document.querySelectorAll('#editorBody .page-list .vc-item');
+  const selectAll = _fileSel.size !== cards.length;  // 已全选时再次点击 = 取消全选
+  _fileSel.clear();
+  if (selectAll) cards.forEach(c => _fileSel.add(c.dataset.path));
+  cards.forEach(c => {
+    const sel = _fileSel.has(c.dataset.path);
+    c.classList.toggle('vc-checked', sel);
+    const box = c.querySelector('.fc-box');
+    if (box) box.checked = sel;
+  });
   updateFileManageUI();
 }
 function deleteSelectedFiles() {
-  const paths = [...document.querySelectorAll('#editorBody .fc-box:checked')].map(c => c.dataset.path);
+  const paths = [..._fileSel];
   if (!paths.length) { toast('未选择文件','warn'); return; }
   showModal({ title:'批量删除', msg:`确认删除选中的 ${paths.length} 个文件吗？\n此操作不可恢复。`,
     okText:'删除', onOk:()=>{
       paths.forEach(p => { try { JSON.parse(AndroidBridge.deleteRecordFile(p)); } catch(e){} });
       state._fileManage = false;
       state.selectedFile = null;
+      _fileSel.clear();
       toast('已删除','ok');
       loadFiles(); renderEditor();
     } });
@@ -834,6 +864,12 @@ function updateFileListPageSilent() {
   list.classList.add('no-anim');
   list.innerHTML = buildFileListHtml();
   bindFileList(list);
+  // 静默重建会清掉卡片上的勾选框：管理模式恢复勾选（选中集合是权威状态）
+  if (state._fileManage) {
+    const alive = new Set([...list.querySelectorAll('.vc-item')].map(c => c.dataset.path));
+    for (const p of [..._fileSel]) if (!alive.has(p)) _fileSel.delete(p);
+    updateFileManageUI();
+  }
 }
 
 /* ========== 数据统计(对应原版 DefaultPage) ========== */
