@@ -182,8 +182,10 @@ object RoomManager {
             }
         } catch (_: Exception) {}
         // 添加时已在直播 → 立即启动弹幕/录制/心跳，不等下一轮轮询（最长 pollInterval 秒）
+        // 添加时已真实开播(status=1) → 立即启动弹幕/录制/心跳，不等下一轮轮询；
+        // 轮播(2)不录制不连弹幕，等真实开播
         // 并把 liveStatusPrev 置为已开播，避免首轮轮询重复触发“开播了”事件
-        if (card.liveStatus == 1 || card.liveStatus == 2) {
+        if (card.liveStatus == 1) {
             card.liveStatusPrev = true
             if (card.danmakuOpen) ensureDanmaku(card)
             if (settings.watchHeartbeat) WatchHeartbeat.register(card.roomId, card.uid)
@@ -214,8 +216,8 @@ object RoomManager {
             rooms[u.roomId] = card
             saveRooms()
             notifyRoomsChanged()
-            // 添加时已在直播 → 立即启动弹幕/录制/心跳，不等下一轮轮询
-            if (card.liveStatus == 1 || card.liveStatus == 2) {
+            // 添加时已真实开播(status=1) → 立即启动弹幕/录制/心跳，不等下一轮轮询；轮播(2)不录制
+            if (card.liveStatus == 1) {
                 card.liveStatusPrev = true
                 if (card.danmakuOpen) ensureDanmaku(card)
                 if (settings.watchHeartbeat) WatchHeartbeat.register(card.roomId, card.uid)
@@ -467,9 +469,9 @@ object RoomManager {
         }
     }
 
-    /** 开播/下播事件判定（含首轮强制触发） */
+    /** 开播/下播事件判定（含首轮强制触发）；轮播(2)不算直播：不录制/不连弹幕/不上报心跳 */
     private fun checkLiveTransition(card: RoomCard) {
-        val isLive = card.liveStatus == 1 || card.liveStatus == 2
+        val isLive = card.liveStatus == 1
         val wasLive = card.liveStatusPrev
         if (isLive && !wasLive) {
             // 开播
