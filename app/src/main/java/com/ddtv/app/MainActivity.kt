@@ -162,11 +162,11 @@ class MainActivity : AppCompatActivity() {
             }
         }, "FfmpegVersion").apply { isDaemon = true; start() }
 
-        // 启动后自动检查更新（需已配置 GitHub 仓库且开启开关；等 WebView 就绪再推事件）
+        // 启动后自动检查更新（需已配置 GitHub 仓库且开启开关；等 WebView 就绪再推事件，静默模式：有新版本才提示）
         webView.postDelayed({
             val s = RoomManager.settings
             if (s.autoUpdate && s.updateRepo.isNotBlank()) {
-                bridge.checkUpdate(s.updateRepo)
+                bridge.checkUpdate(s.updateRepo, true)
             }
         }, 5000)
 
