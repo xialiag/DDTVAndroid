@@ -72,10 +72,10 @@ object BiliLiveApi {
     // ============ 房间信息 ============
 
     /**
-     * 裸 IP 主机（非域名）：实测 app-room 音频流的 url_info 混入直接 IP 线路
-     * （host=183.232.239.5 等，带 platform=android/uparams 签名参数），
-     * 直连 CDN 边缘无 SNI/Host 匹配，录制请求固定 403；bilivideo.com 域名线路正常。
-     * 收集线路时过滤，避免"固定一个线路异常"。
+     * 裸 IP 主机（非域名）：app-room 音频流/部分 web-room 流的 url_info 会混入直接 IP 线路
+     * （host=183.232.239.5 等，带 platform=android/uparams 签名参数，实为 PCDN 节点）。
+     * 这类节点走 upsig 防盗链网关：带浏览器指纹(UA/Referer)的请求固定 403，
+     * 仅 B站 App UA + 无 Referer 放行（实测）。解析时单独收进 PCDN 列表作最后兜底，由录制器换指纹请求。
      */
     private fun isBareIpHost(host: String): Boolean {
         return host.matches(Regex("^\\d{1,3}(\\.\\d{1,3}){3}$")) || host.contains(':')
@@ -229,6 +229,8 @@ object BiliLiveApi {
         val hlsUrl: String = "",     // m3u8 地址（http_hls + fmp4 + avc）
         val flvLines: List<String> = emptyList(),  // 全部 FLV CDN 线路（备线切换用）
         val hlsLines: List<String> = emptyList(),  // 全部 HLS CDN 线路
+        val flvPcdnLines: List<String> = emptyList(),  // FLV PCDN 线路（裸IP节点，需 App UA 无 Referer 指纹，仅作最后兜底）
+        val hlsPcdnLines: List<String> = emptyList(),  // HLS PCDN 线路
         val specialTypes: List<Int> = emptyList(),  // 1=付费直播
         val liveStatus: Int = 0,
     ) {
@@ -269,6 +271,8 @@ object BiliLiveApi {
             val specialTypes = JSONArray2IntList(data.optJSONArray("all_special_types"))
             val flvLines = mutableListOf<String>()
             val hlsLines = mutableListOf<String>()
+            val flvPcdnLines = mutableListOf<String>()
+            val hlsPcdnLines = mutableListOf<String>()
             val streams = playUrl.optJSONArray("stream") ?: return null
             for (i in 0 until streams.length()) {
                 val stream = streams.getJSONObject(i)
@@ -286,13 +290,15 @@ object BiliLiveApi {
                         if (Json.obj(codec, "codec_name") != "avc") continue
                         val urlInfo = codec.optJSONArray("url_info") ?: continue
                         if (urlInfo.length() == 0) continue
-                        // 收集全部 CDN 线路（原版 Random.Next 只取一条；这里保留全部供备线切换）
+                        // 收集全部 CDN 线路（原版 Random.Next 只取一条；这里保留全部供备线切换）。
+                        // 裸 IP 主机 = PCDN 节点（upsig 防盗链，仅认 App UA 无 Referer），单独收进 PCDN 列表作最后兜底
                         for (m in 0 until urlInfo.length()) {
                             val info = urlInfo.getJSONObject(m)
                             val host = Json.obj(info, "host")
-                            if (isBareIpHost(host)) continue  // 裸 IP 直连必 403，过滤
                             val full = host + Json.obj(codec, "base_url") + Json.obj(info, "extra")
-                            if (protocol == "http_stream") flvLines.add(full) else hlsLines.add(full)
+                            val pcdn = isBareIpHost(host)
+                            if (protocol == "http_stream") { if (pcdn) flvPcdnLines.add(full) else flvLines.add(full) }
+                            else { if (pcdn) hlsPcdnLines.add(full) else hlsLines.add(full) }
                         }
                     }
                 }
@@ -303,6 +309,8 @@ object BiliLiveApi {
                 hlsUrl = hlsLines.firstOrNull() ?: "",
                 flvLines = flvLines,
                 hlsLines = hlsLines,
+                flvPcdnLines = flvPcdnLines,
+                hlsPcdnLines = hlsPcdnLines,
                 specialTypes = specialTypes,
                 liveStatus = Json.objInt(data, "live_status")
             )
@@ -340,6 +348,8 @@ object BiliLiveApi {
             val specialTypes = JSONArray2IntList(data.optJSONArray("all_special_types"))
             val flvLines = mutableListOf<String>()
             val hlsLines = mutableListOf<String>()
+            val flvPcdnLines = mutableListOf<String>()
+            val hlsPcdnLines = mutableListOf<String>()
             val streams = playUrl.optJSONArray("stream") ?: return null
             for (i in 0 until streams.length()) {
                 val stream = streams.getJSONObject(i)
@@ -362,9 +372,11 @@ object BiliLiveApi {
                         for (m in 0 until urlInfo.length()) {
                             val info = urlInfo.getJSONObject(m)
                             val host = Json.obj(info, "host")
-                            if (isBareIpHost(host)) continue  // 裸 IP 直连必 403，过滤
                             val full = host + Json.obj(codec, "base_url") + Json.obj(info, "extra")
-                            if (protocol == "http_stream") flvLines.add(full) else hlsLines.add(full)
+                            // 裸 IP 主机 = PCDN 节点（upsig 防盗链，仅认 App UA 无 Referer），单独收进 PCDN 列表作最后兜底
+                            val pcdn = isBareIpHost(host)
+                            if (protocol == "http_stream") { if (pcdn) flvPcdnLines.add(full) else flvLines.add(full) }
+                            else { if (pcdn) hlsPcdnLines.add(full) else hlsLines.add(full) }
                         }
                     }
                 }
@@ -375,6 +387,8 @@ object BiliLiveApi {
                 hlsUrl = hlsLines.firstOrNull() ?: "",
                 flvLines = flvLines,
                 hlsLines = hlsLines,
+                flvPcdnLines = flvPcdnLines,
+                hlsPcdnLines = hlsPcdnLines,
                 specialTypes = specialTypes,
                 liveStatus = Json.objInt(data, "live_status")
             )

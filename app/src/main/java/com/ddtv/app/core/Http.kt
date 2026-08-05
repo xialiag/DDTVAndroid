@@ -14,10 +14,14 @@ object Http {
     @Volatile var cookie: String = ""
     @Volatile var userAgent: String =
         "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/129.0.0.0 Safari/537.36 Edg/129.0.0.0"
+    /** PCDN 节点要求的 B站 App 指纹（upsig 防盗链网关校验 UA 且不接受浏览器 Referer；实测仅 App UA+无 Referer 放行） */
+    @Volatile var appUserAgent: String =
+        "Bilibili/8980200 (Android ${android.os.Build.VERSION.RELEASE}; ${android.os.Build.MANUFACTURER} ${android.os.Build.MODEL}; com.bilibili.app.blue; 8980200) " +
+            "Dalvik/2.1.0 (Linux; U; Android ${android.os.Build.VERSION.RELEASE}; Build/${android.os.Build.ID})"
 
     /** GET 文本，自动解压 */
-    fun get(url: String, extraCookie: String = "", referer: String = ""): String {
-        val bytes = getBytes(url, "GET", null, extraCookie, referer)
+    fun get(url: String, extraCookie: String = "", referer: String = "", ua: String = userAgent): String {
+        val bytes = getBytes(url, "GET", null, extraCookie, referer, ua = ua)
         return String(bytes, Charsets.UTF_8)
     }
 
@@ -100,7 +104,8 @@ object Http {
     /** GET 字节流 */
     fun getBytes(
         url: String, method: String = "GET", body: ByteArray? = null,
-        extraCookie: String = "", referer: String = "", range: String = "", timeoutMs: Int = 30000
+        extraCookie: String = "", referer: String = "", range: String = "", timeoutMs: Int = 30000,
+        ua: String = userAgent
     ): ByteArray {
         var conn: HttpURLConnection? = null
         try {
@@ -109,7 +114,7 @@ object Http {
                 instanceFollowRedirects = true
                 connectTimeout = 10000
                 readTimeout = timeoutMs
-                setRequestProperty("User-Agent", userAgent)
+                setRequestProperty("User-Agent", ua)
                 setRequestProperty("Accept-Encoding", "gzip, deflate")
                 setRequestProperty("Accept", "*/*")
                 setRequestProperty("Accept-Language", "zh-CN,zh;q=0.9,en;q=0.8")

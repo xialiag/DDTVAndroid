@@ -238,27 +238,30 @@ object LiveRecorder {
                 else -> if (info.hlsUrl.isNotEmpty()) "hls" else "flv"
             }
 
-            // 3. 备线切换：从全部线路中按轮转取一条
-            val lines = if (mode == "hls") {
+            // 3. 备线切换：CDN 线路优先，PCDN 线路(裸IP节点,需 App UA 指纹)追加在最后仅作兜底
+            val primary = if (mode == "hls") {
                 info.hlsLines.ifEmpty { listOf(info.hlsUrl) }
             } else {
                 info.flvLines.ifEmpty { listOf(info.flvUrl) }
             }
+            val pcdnLines = if (mode == "hls") info.hlsPcdnLines else info.flvPcdnLines
+            val lines = primary + pcdnLines
             val idx = lineRound % lines.size
             val lineUrl = lines.getOrElse(idx) { lines.first() }
             lineRound++
-            Logger.i("Recorder", "[${card.name.ifEmpty { card.roomId.toString() }}] 使用线路 ${idx + 1}/${lines.size} (${mode.uppercase()})")
+            val isPcdn = idx >= primary.size
+            Logger.i("Recorder", "[${card.name.ifEmpty { card.roomId.toString() }}] 使用线路 ${idx + 1}/${lines.size} (${mode.uppercase()}${if (isPcdn) " PCDN" else ""})")
 
             val result = if (mode == "hls") {
                 if (lineUrl.isEmpty()) {
                     Logger.w("Recorder", "[${card.name}] HLS 模式但无 HLS 流")
                     null
-                } else hlsSegment(task, card, lineUrl)
+                } else hlsSegment(task, card, lineUrl, isPcdn)
             } else {
                 if (lineUrl.isEmpty()) {
                     Logger.w("Recorder", "[${card.name}] FLV 模式但无 FLV 流")
                     null
-                } else flvSegment(task, card, lineUrl)
+                } else flvSegment(task, card, lineUrl, isPcdn)
             }
 
             if (task.cancel.get()) {
@@ -564,7 +567,7 @@ object LiveRecorder {
     // ============ FLV 录制（移植 FLV.cs） ============
 
     /** @return "retry"/"retry_exhausted"/"live_ended"/"cut"/null(无流) */
-    private fun flvSegment(task: RecTask, card: RoomCard, flvUrl: String): String? {
+    private fun flvSegment(task: RecTask, card: RoomCard, flvUrl: String, pcdn: Boolean = false): String? {
         val roomId = card.roomId
         val file = newSegmentFile(card, "flv")
         card.recFile = file
@@ -591,9 +594,10 @@ object LiveRecorder {
                             instanceFollowRedirects = true
                             connectTimeout = 15000
                             readTimeout = 30000
-                            setRequestProperty("User-Agent", Http.userAgent)
+                            // PCDN 节点(裸IP)走 upsig 网关：仅认 App UA 且不能带浏览器 Referer；CDN 线路保持浏览器指纹
+                            setRequestProperty("User-Agent", if (pcdn) Http.appUserAgent else Http.userAgent)
                             setRequestProperty("Accept", "*/*")
-                            setRequestProperty("Referer", "https://www.bilibili.com/")
+                            if (!pcdn) setRequestProperty("Referer", "https://www.bilibili.com/")
                             if (Http.cookie.isNotEmpty()) setRequestProperty("Cookie", Http.cookie)
                         }
                         task.conn = conn  // 供 stop() 断开以打断阻塞读流
@@ -693,7 +697,7 @@ object LiveRecorder {
     // ============ HLS 录制（移植 HLS.cs） ============
 
     /** @return "retry"/"retry_exhausted"/"live_ended"/"cut"/null(无流) */
-    private fun hlsSegment(task: RecTask, card: RoomCard, hlsUrl: String): String? {
+    private fun hlsSegment(task: RecTask, card: RoomCard, hlsUrl: String, pcdn: Boolean = false): String? {
         val roomId = card.roomId
         var file = newSegmentFile(card, "mp4")
         card.recFile = file
@@ -719,9 +723,11 @@ object LiveRecorder {
                         if (finalizeSegment(card, file, bytesForThisSegment)) notifySegmentEnd(roomId, afterSegmentFinalized(card, file))
                         return "cut"
                     }
-                    // 拉取 m3u8
+                    // 拉取 m3u8（PCDN 线路走 App 指纹：无 Referer + App UA）
                     val m3u8Text = try {
-                        Http.get(m3u8Url, referer = "https://live.bilibili.com/")
+                        Http.get(m3u8Url,
+                            referer = if (pcdn) "" else "https://live.bilibili.com/",
+                            ua = if (pcdn) Http.appUserAgent else Http.userAgent)
                     } catch (e: Exception) {
                         Logger.w("Recorder", "[${card.name}] [HLS] 拉取 m3u8 失败: ${e.message}")
                         consecutiveFailures++
@@ -764,7 +770,7 @@ object LiveRecorder {
                                 // 无 init 的文件缺 moov 必坏：重试 3 次，仍失败则放弃本段（外层切线/重试），不留坏文件
                                 repeat(3) {
                                     if (task.cancel.get()) return@repeat
-                                    okInit = downloadSegment(initUrl, fos, stopWatch, task.cancel) { n ->
+                                    okInit = downloadSegment(initUrl, fos, stopWatch, task.cancel, pcdn) { n ->
                                         bytesForThisSegment += n
                                         card.recSize += n
                                         card.recSpeed = stopWatch.speed()
@@ -788,7 +794,7 @@ object LiveRecorder {
                             }
                             val segUrl = buildSegmentUrl(m3u8Url, seg.fileName, seg.ext)
                             val segStart = fos.channel.position()
-                            val ok = downloadSegment(segUrl, fos, stopWatch, task.cancel) { n ->
+                            val ok = downloadSegment(segUrl, fos, stopWatch, task.cancel, pcdn) { n ->
                                 bytesForThisSegment += n
                                 card.recSize += n
                                 card.recSpeed = stopWatch.speed()
@@ -896,15 +902,16 @@ object LiveRecorder {
     }
 
     /** 下载单个分片到 fos，返回是否成功 */
-    private fun downloadSegment(url: String, fos: FileOutputStream, stopWatch: StopWatch, cancel: java.util.concurrent.atomic.AtomicBoolean, onBytes: (Int) -> Unit): Boolean {
+    private fun downloadSegment(url: String, fos: FileOutputStream, stopWatch: StopWatch, cancel: java.util.concurrent.atomic.AtomicBoolean, pcdn: Boolean = false, onBytes: (Int) -> Unit): Boolean {
         var conn: HttpURLConnection? = null
         return try {
             conn = (URL(url).openConnection() as HttpURLConnection).apply {
                 instanceFollowRedirects = true
                 connectTimeout = 10000
                 readTimeout = 20000
-                setRequestProperty("User-Agent", Http.userAgent)
-                setRequestProperty("Referer", "https://live.bilibili.com/")
+                // PCDN 节点(裸IP)走 upsig 网关：仅认 App UA 且不能带浏览器 Referer；CDN 线路保持浏览器指纹
+                setRequestProperty("User-Agent", if (pcdn) Http.appUserAgent else Http.userAgent)
+                if (!pcdn) setRequestProperty("Referer", "https://live.bilibili.com/")
                 if (Http.cookie.isNotEmpty()) setRequestProperty("Cookie", Http.cookie)
             }
             val code = conn.responseCode
