@@ -148,11 +148,13 @@ object BiliLiveApi {
             val obj = JSONObject(body)
             if (obj.optInt("code") != 0) return null
             val d = obj.getJSONObject("data")
+            // 新版 get_info 无顶层 uname，主播名在 uploader.uname（部分时段接口两者都缺，返回空由调用方兜底）
+            val up = d.optJSONObject("uploader")
             RoomDetail(
                 title = Json.obj(d, "title"),
                 cover = Json.obj(d, "user_cover").ifEmpty { Json.obj(d, "cover") },
                 online = Json.objLong(d, "online"),
-                uploader = Json.obj(d, "uname"),
+                uploader = (up?.optString("uname", "") ?: "").ifEmpty { Json.obj(d, "uname") },
                 area = Json.obj(d, "area_name"),
                 areaId = Json.objLong(d, "area_id"),
             )

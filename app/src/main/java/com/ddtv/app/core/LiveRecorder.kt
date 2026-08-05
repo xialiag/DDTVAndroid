@@ -221,6 +221,12 @@ object LiveRecorder {
                     notifyLiveEnded(roomId, card.files.toList(), "live_ended")
                     break
                 }
+                // 轮播(2)无流：B站侧 playurl 为空（实测 app-room/web-room 均 EMPTY），
+                // 继续重试只会每2秒刷"获取失败"日志；停止尝试，等真实开播(status 1)后由轮询/开播事件重新拉起
+                if (RoomManager.getLiveStatus(roomId) == 2) {
+                    Logger.w("Recorder", "[${card.name}] 轮播中无可用流，停止录制尝试(等待真实开播)")
+                    break
+                }
                 if (!retryDelay(task, 2000)) break
                 continue
             }
@@ -251,6 +257,9 @@ object LiveRecorder {
             lineRound++
             val isPcdn = idx >= primary.size
             Logger.i("Recorder", "[${card.name.ifEmpty { card.roomId.toString() }}] 使用线路 ${idx + 1}/${lines.size} (${mode.uppercase()}${if (isPcdn) " PCDN" else ""})")
+
+            // 段边界迁移：上一分片已关闭(无打开句柄)，强制迁移遗留占位目录（名字补全后一个分片内归位）
+            RoomManager.migratePlaceholderFolder(card, force = true)
 
             val result = if (mode == "hls") {
                 if (lineUrl.isEmpty()) {

@@ -341,9 +341,9 @@ class DDTVBridge(private val context: Context, private val webView: WebView) {
         return 0
     }
 
-    /** 检查 GitHub Releases 最新版，结果异步推给 JS（update_result 事件） */
+    /** 检查 GitHub Releases 最新版，结果异步推给 JS（update_result 事件；silent=true 时 JS 不弹“已是最新/失败”提示，BBDown 同款） */
     @JavascriptInterface
-    fun checkUpdate(repo: String) {
+    fun checkUpdate(repo: String, silent: Boolean) {
         val ownerRepo = repo.trim().removePrefix("https://github.com/").removeSuffix("/")
         Thread({
             try {
@@ -352,7 +352,7 @@ class DDTVBridge(private val context: Context, private val webView: WebView) {
                 val o = JSONObject(body)
                 val tag = o.optString("tag_name", "")
                 if (tag.isEmpty()) {
-                    pushToJs("""{"type":"update_result","ok":false,"msg":"仓库不存在或无 Release"}""")
+                    pushToJs("""{"type":"update_result","ok":false,"silent":$silent,"msg":"仓库不存在或无 Release"}""")
                     return@Thread
                 }
                 val latest = tag.removePrefix("v")
@@ -360,6 +360,7 @@ class DDTVBridge(private val context: Context, private val webView: WebView) {
                 pushToJs(JSONObject().apply {
                     put("type", "update_result")
                     put("ok", true)
+                    put("silent", silent)
                     put("hasUpdate", hasUpdate)
                     put("current", currentVersion)
                     put("latest", latest)
@@ -370,6 +371,7 @@ class DDTVBridge(private val context: Context, private val webView: WebView) {
                 pushToJs(JSONObject().apply {
                     put("type", "update_result")
                     put("ok", false)
+                    put("silent", silent)
                     put("msg", e.message ?: "网络错误")
                 }.toString())
             }

@@ -89,6 +89,8 @@ object RoomManager {
         else java.io.File(context.getExternalFilesDir(null), "DDTV").apply { mkdirs() }
         loadSettings()
         loadRooms()
+        // 启动清理：迁移上次会话遗留的占位目录（名字已持久化的房间），避免 Room<id> 目录堆积
+        try { rooms.values.forEach { migratePlaceholderFolder(it) } } catch (_: Exception) {}
         loadHistories()
         LiveRecorder.outputRoot = outputDir
         LiveRecorder.applySettings(settings)
@@ -170,7 +172,8 @@ object RoomManager {
         try {
             val detail = BiliLiveApi.getRoomDetail(realRoomId)
             if (detail != null) {
-                card.name = detail.uploader
+                // 名字绝不允许空（空名会导致录制目录变 Room<id>）：detail 拿不到就用占位，轮询补全后自动迁移
+                card.name = detail.uploader.ifEmpty { "房间 $realRoomId" }
                 card.title = detail.title
                 card.cover = detail.cover
                 card.areaName = detail.area
@@ -297,17 +300,19 @@ object RoomManager {
             val info = BiliLiveApi.roomInit(roomId) ?: return
             applyRoomInit(card, info)
             // 拉详情（标题/封面/主播名）
+            val nameBefore = card.name
             try {
                 val detail = BiliLiveApi.getRoomDetail(roomId)
                 if (detail != null) {
                     card.title = detail.title
                     card.cover = detail.cover
-                    card.name = detail.uploader
+                    card.name = detail.uploader.ifEmpty { card.name.ifEmpty { "房间 ${card.roomId}" } }
                     card.areaName = detail.area
                     card.areaId = detail.areaId
                     card.popularity = detail.online
                 }
             } catch (_: Exception) {}
+            if (card.name != nameBefore) saveRooms()  // 轮询/刷新补上的名字要持久化，否则重启又回占位
             migratePlaceholderFolder(card)
             notifyRoomUpdate(roomId)
         } catch (e: Exception) {
@@ -325,6 +330,7 @@ object RoomManager {
 
     /** 将 get_status_info_by_uids 的数据应用到卡片 */
     private fun applyStatusInfo(card: RoomCard, data: JSONObject) {
+        val nameBefore = card.name
         card.liveStatus = Json.objInt(data, "live_status", card.liveStatus)
         card.liveTime = Json.objLong(data, "live_time", card.liveTime)
         card.title = Json.obj(data, "title", card.title)
@@ -335,14 +341,16 @@ object RoomManager {
         card.name = Json.obj(data, "uname", "").ifEmpty { card.name }
         card.face = Json.obj(data, "face", card.face)
         card.cover = Json.obj(data, "cover_from_user", card.cover).ifEmpty { Json.obj(data, "keyframe", card.cover) }
+        if (card.name != nameBefore) saveRooms()  // 轮询补上的主播名必须持久化，否则重启又回占位目录
         migratePlaceholderFolder(card)
     }
 
-    /** 把“房间 <id>/Room<id>”占位目录迁移为真实主播名目录；目标已存在时合并内容（录制中不迁，结束后触发） */
-    private fun migratePlaceholderFolder(card: RoomCard) {
+    /** 把“房间 <id>/Room<id>”占位目录迁移为真实主播名目录；目标已存在时合并内容
+     *  force=true：由录制器在段边界调用（上一个分片已关闭，无打开句柄，可安全迁移），绕过录制中保护 */
+    fun migratePlaceholderFolder(card: RoomCard, force: Boolean = false) {
         val name = card.name.trim()
         if (name.isEmpty() || name.startsWith("房间 ") || name.startsWith("Room")) return
-        if (LiveRecorder.isRecording(card.roomId)) return
+        if (!force && LiveRecorder.isRecording(card.roomId)) return
         val root = outputDir
         if (!root.isDirectory) return
         val target = java.io.File(root, sanitizeFileName(name))
@@ -451,9 +459,9 @@ object RoomManager {
                 } catch (_: Exception) {}
             }
             notifyRoomUpdate(card.roomId)
-            // 安全网：直播未断但录制意外停止（线程异常、文件被外部删除等）时自动重启；手动停止的房间不打扰
-            val isLive = card.liveStatus == 1 || card.liveStatus == 2
-            if (isLive && card.autoRecord && !LiveRecorder.isRecording(card.roomId) && !card.manualStop) {
+            // 安全网：真实直播(status 1)未断但录制意外停止（线程异常、文件被外部删除等）时自动重启；手动停止的房间不打扰。
+            // 轮播(2)不自动重启：无流轮播房会无限"获取流失败"循环（有流的轮播由开播事件/状态切换拉起）
+            if (card.liveStatus == 1 && card.autoRecord && !LiveRecorder.isRecording(card.roomId) && !card.manualStop) {
                 ensureRecording(card)
             }
         }
@@ -826,7 +834,7 @@ object RoomManager {
             repairDeleteSource = prefs.getBoolean("repair_delete_source", true),
             debugServer = prefs.getBoolean("debug_server", false),
             updateRepo = prefs.getString("update_repo", "xialiag/DDTVAndroid") ?: "xialiag/DDTVAndroid",
-            autoUpdate = prefs.getBoolean("auto_update", false),
+            autoUpdate = prefs.getBoolean("auto_update", true),
         )
     }
 

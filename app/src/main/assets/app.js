@@ -646,7 +646,7 @@ function renderRoomDetail(rid, container) {
       ${r.cover?`<div class="head-cover-wrap"><img src="${esc(imgUrl(r.cover))}" class="head-cover" referrerpolicy="no-referrer" onerror="this.parentElement.classList.add('no-img')"></div>`:''}
       <div class="head-info">
         <div class="detail-title">${esc(r.name||'房间 '+r.roomId)}</div>
-        <div class="detail-meta"><span class="state-pill ${isLive?'state-running':'state-offline'}">${isLive?'● LIVE':'● OFFLINE'}</span>
+        <div class="detail-meta"><span class="state-pill ${isLive?'state-running':'state-offline'}">${isLive ? (r.liveStatus===2?'● 轮播':'● LIVE') : '● OFFLINE'}</span>
           ${esc(r.title||'未开播')}</div>
         <div class="room-meta-line">
           <span>${ic('home',13)} ${r.roomId}${r.shortId?' (短号 '+r.shortId+')':''}</span>
@@ -1475,14 +1475,15 @@ function toggleDebugServer() {
 
 /* ========== 自动更新（GitHub Releases） ========== */
 let _updating = false;
-function checkUpdateNow() {
+/* 检查更新（BBDown 同款）：silent=true 由启动时静默调用，无新版本/失败不打扰用户 */
+function checkUpdateNow(silent) {
   if (_updating) return;
   const repo = ((state.settings&&state.settings.updateRepo)||'').trim();
-  if (!repo) { toast('更新仓库未配置，暂无法检查更新','warn'); return; }
+  if (!repo) { if (!silent) toast('更新仓库未配置，暂无法检查更新','warn'); return; }
   _updating = true;
-  toast('正在检查更新…');
-  try { AndroidBridge.checkUpdate(repo); }
-  catch(e){ _updating = false; toast('检查失败: '+e,'err'); }
+  if (!silent) toast('正在检查更新…');
+  try { AndroidBridge.checkUpdate(repo, !!silent); }
+  catch(e){ _updating = false; if (!silent) toast('检查失败: '+e,'err'); }
 }
 /** 保存录制目录（文字输入，参照 BBDownAndroid） */
 function saveOutputDir() {
@@ -1661,10 +1662,10 @@ function onNativeEvent(evt) {
       renderRepairTasks(evt.tasks || []);
       break;
     case 'update_result':
-      // 自动更新检查结果
+      // 自动更新检查结果（silent=启动静默检查：无新版本/失败不打扰）
       _updating = false;
-      if (!evt.ok) { toast('检查更新失败: '+(evt.msg||'网络错误'),'err'); break; }
-      if (!evt.hasUpdate) { toast('当前已是最新版本 ('+evt.current+')','ok'); break; }
+      if (!evt.ok) { if (!evt.silent) toast('检查更新失败: '+(evt.msg||'网络错误'),'err'); break; }
+      if (!evt.hasUpdate) { if (!evt.silent) toast('当前已是最新版本 ('+evt.current+')','ok'); break; }
       showModal({ title:'发现新版本 '+evt.latest, msg: '当前版本: '+evt.current+'\n\n'+(evt.note||'').slice(0,400),
         okText:'前往下载', onOk: () => { try{ AndroidBridge.openUrl(evt.url); }catch(e){ toast('无法打开浏览器','err'); } } });
       break;
