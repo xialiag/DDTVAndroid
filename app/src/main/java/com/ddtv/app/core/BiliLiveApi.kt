@@ -71,6 +71,16 @@ object BiliLiveApi {
 
     // ============ 房间信息 ============
 
+    /**
+     * 裸 IP 主机（非域名）：实测 app-room 音频流的 url_info 混入直接 IP 线路
+     * （host=183.232.239.5 等，带 platform=android/uparams 签名参数），
+     * 直连 CDN 边缘无 SNI/Host 匹配，录制请求固定 403；bilivideo.com 域名线路正常。
+     * 收集线路时过滤，避免"固定一个线路异常"。
+     */
+    private fun isBareIpHost(host: String): Boolean {
+        return host.matches(Regex("^\\d{1,3}(\\.\\d{1,3}){3}$")) || host.contains(':')
+    }
+
     /** 房间初始化：解析短号→真实房间号，获取直播状态（免登录） */
     fun roomInit(roomId: Long): JSONObject? {
         return try {
@@ -279,7 +289,9 @@ object BiliLiveApi {
                         // 收集全部 CDN 线路（原版 Random.Next 只取一条；这里保留全部供备线切换）
                         for (m in 0 until urlInfo.length()) {
                             val info = urlInfo.getJSONObject(m)
-                            val full = Json.obj(info, "host") + Json.obj(codec, "base_url") + Json.obj(info, "extra")
+                            val host = Json.obj(info, "host")
+                            if (isBareIpHost(host)) continue  // 裸 IP 直连必 403，过滤
+                            val full = host + Json.obj(codec, "base_url") + Json.obj(info, "extra")
                             if (protocol == "http_stream") flvLines.add(full) else hlsLines.add(full)
                         }
                     }
@@ -349,7 +361,9 @@ object BiliLiveApi {
                         if (urlInfo.length() == 0) continue
                         for (m in 0 until urlInfo.length()) {
                             val info = urlInfo.getJSONObject(m)
-                            val full = Json.obj(info, "host") + Json.obj(codec, "base_url") + Json.obj(info, "extra")
+                            val host = Json.obj(info, "host")
+                            if (isBareIpHost(host)) continue  // 裸 IP 直连必 403，过滤
+                            val full = host + Json.obj(codec, "base_url") + Json.obj(info, "extra")
                             if (protocol == "http_stream") flvLines.add(full) else hlsLines.add(full)
                         }
                     }

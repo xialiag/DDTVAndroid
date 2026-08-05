@@ -244,9 +244,10 @@ object LiveRecorder {
             } else {
                 info.flvLines.ifEmpty { listOf(info.flvUrl) }
             }
-            val lineUrl = lines.getOrElse(lineRound % lines.size) { lines.first() }
+            val idx = lineRound % lines.size
+            val lineUrl = lines.getOrElse(idx) { lines.first() }
             lineRound++
-            Logger.i("Recorder", "[${card.name.ifEmpty { card.roomId.toString() }}] 使用线路 ${lineRound % lines.size + 1}/${lines.size} (${mode.uppercase()})")
+            Logger.i("Recorder", "[${card.name.ifEmpty { card.roomId.toString() }}] 使用线路 ${idx + 1}/${lines.size} (${mode.uppercase()})")
 
             val result = if (mode == "hls") {
                 if (lineUrl.isEmpty()) {
