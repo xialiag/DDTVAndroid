@@ -78,7 +78,9 @@ object BiliLiveApi {
      * 仅 B站 App UA + 无 Referer 放行（实测）。解析时单独收进 PCDN 列表作最后兜底，由录制器换指纹请求。
      */
     private fun isBareIpHost(host: String): Boolean {
-        return host.matches(Regex("^\\d{1,3}(\\.\\d{1,3}){3}$")) || host.contains(':')
+        // host 字段带 http:// 前缀：先剥掉 scheme，否则 contains(':') 会把所有 URL 误判成裸 IP
+        val h = host.substringAfter("://", host)
+        return h.matches(Regex("^\\d{1,3}(\\.\\d{1,3}){3}$")) || h.contains(':')
     }
 
     /** 房间初始化：解析短号→真实房间号，获取直播状态（免登录） */
