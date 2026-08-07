@@ -1398,8 +1398,6 @@ function renderSettings() {
     <h2>保活</h2>
     <div class="switch-row"><div class="sw-text"><div class="sw-label">屏幕常亮</div><div class="sw-desc">保持屏幕常亮,方便查看录制/弹幕状态</div></div>
       <label class="switch"><input type="checkbox" id="setKeepScreen" onchange="saveSettings()"><span class="slider"></span></label></div>
-    <div class="switch-row"><div class="sw-text"><div class="sw-label">息屏保录制</div><div class="sw-desc">屏幕关闭后保持 CPU 运行:录制不断流、开播检测不中断(耗电增加;有关注房间时生效)</div></div>
-      <label class="switch"><input type="checkbox" id="setKeepRec" onchange="saveSettings()"><span class="slider"></span></label></div>
     <h2>调试</h2>
     <div class="switch-row"><div class="sw-text"><div class="sw-label">调试服务器</div><div class="sw-desc">端口 19864，本机/同一WiFi可查看状态与日志；默认关闭</div></div>
       <label class="switch"><input type="checkbox" id="setDebug" onchange="toggleDebugServer()"><span class="slider"></span></label></div>
@@ -1427,7 +1425,6 @@ function renderSettings() {
     $('#setAutoUpdate').checked=!!s.autoUpdate;
     $('#setDebug').checked=!!s.debugServer;
     $('#setKeepScreen').checked=!!s.keepScreenOn;
-    $('#setKeepRec').checked=!!s.keepRecordingOnLock;
     $('#setOutputDir').value=s.outputDir||''; }
   refreshPermStatus();
 }
@@ -1440,8 +1437,7 @@ function saveSettings() {
     blockBarrage:$('#setBlock').value.trim(),fileNameFormat:$('#setFmt').value.trim(),
     autoUpdate:$('#setAutoUpdate').checked,
     debugServer:$('#setDebug').checked,
-    keepScreenOn:$('#setKeepScreen').checked,
-    keepRecordingOnLock:$('#setKeepRec').checked};
+    keepScreenOn:$('#setKeepScreen').checked};
   const r=JSON.parse(AndroidBridge.setSettings(JSON.stringify(s)));
   toast(r.msg, r.code<0?'err':'ok'); if(r.code>0){state.settings=s;updateStatusbar();}
 }

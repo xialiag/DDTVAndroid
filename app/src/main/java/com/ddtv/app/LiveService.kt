@@ -34,15 +34,6 @@ class LiveService : Service() {
         const val REMIND_BASE_ID = 2000
         private var running = false
         fun isRunning(): Boolean = running
-
-        // 息屏保录制:设置开关开 且 有活跃房间(录制中 或 监控中)时才持有 WakeLock
-        // 注意:PARTIAL_WAKE_LOCK 保持 CPU 不休眠——轮询检测(开播检测)的 RoomPoll
-        // 线程同样依赖 CPU,若仅"录制中"持锁,息屏无录制时 CPU 休眠会检测不到开播
-        @Volatile private var wlRequested = false
-        fun refreshWakeLock() {
-            wlRequested = RoomManager.settings.keepRecordingOnLock &&
-                com.ddtv.app.core.RoomManager.getRooms().isNotEmpty()
-        }
     }
 
     private var checkThread: Thread? = null
@@ -60,32 +51,25 @@ class LiveService : Service() {
         // 立即显示通知，避免 Android 12+ 未及时 startForeground 导致 ANR
         startForeground(NOTIFICATION_ID, buildNotification())
 
-        // WakeLock:仅"息屏保录制"开关开且存在录制中房间时持有(省电;设置默认关)
+        // WakeLock:无条件持有,保证息屏后 CPU 持续运行——轮询(开播检测)、录制、弹幕都依赖它
         try {
             val pm = getSystemService(Context.POWER_SERVICE) as PowerManager
             wakeLock = pm.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "DDTV:LiveWakeLock")
             wakeLock?.setReferenceCounted(false)
+            wakeLock?.acquire(60 * 60 * 1000L) // 1小时超时,由下方线程续期
+            Logger.i("Service", "WakeLock 已获取")
         } catch (e: Exception) {
-            Logger.w("Service", "创建 WakeLock 失败: ${e.message}")
+            Logger.w("Service", "获取 WakeLock 失败: ${e.message}")
         }
 
-        // 通知刷新 + WakeLock 条件持有线程
+        // 通知刷新 + WakeLock 续期线程
         checkThread = Thread({
             while (running) {
                 try { Thread.sleep(2000) } catch (_: InterruptedException) { break }
                 if (!running) break
                 try {
-                    // 按"开关+录制中"实时刷新:录制开始自动持锁,结束/关开关自动释放
-                    refreshWakeLock()
-                    if (wlRequested) {
-                        if (wakeLock?.isHeld != true) {
-                            wakeLock?.acquire(10 * 60 * 1000L)
-                            Logger.i("Service", "WakeLock 已获取(息屏保录制)")
-                        }
-                    } else if (wakeLock?.isHeld == true) {
-                        wakeLock?.release()
-                        Logger.i("Service", "WakeLock 已释放(无录制或开关关闭)")
-                    }
+                    // WakeLock 超时被释放则重新获取
+                    if (wakeLock?.isHeld == false) wakeLock?.acquire(10 * 60 * 1000L)
                 } catch (_: Exception) {}
                 try {
                     getSystemService(NotificationManager::class.java)

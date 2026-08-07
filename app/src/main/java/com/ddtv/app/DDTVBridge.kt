@@ -365,7 +365,6 @@ class DDTVBridge(private val context: Context, private val webView: WebView) {
             put("repairDeleteSource", s.repairDeleteSource)
             put("debugServer", s.debugServer)
             put("keepScreenOn", s.keepScreenOn)
-            put("keepRecordingOnLock", s.keepRecordingOnLock)
             put("updateRepo", s.updateRepo)
             put("autoUpdate", s.autoUpdate)
             put("outputDir", RoomManager.outputDir.absolutePath)
@@ -393,14 +392,12 @@ class DDTVBridge(private val context: Context, private val webView: WebView) {
                 flvAppendOnReconnect = o.optBoolean("flvAppendOnReconnect", flvAppendOnReconnect)
                 debugServer = o.optBoolean("debugServer", debugServer)
                 keepScreenOn = o.optBoolean("keepScreenOn", keepScreenOn)
-                keepRecordingOnLock = o.optBoolean("keepRecordingOnLock", keepRecordingOnLock)
                 updateRepo = o.optString("updateRepo", updateRepo)
                 autoUpdate = o.optBoolean("autoUpdate", autoUpdate)
             }
             RoomManager.saveSettings()
             com.ddtv.app.core.LiveRecorder.applySettings(RoomManager.settings)
             applyScreenOn(RoomManager.settings.keepScreenOn)
-            com.ddtv.app.LiveService.refreshWakeLock()
             """{"code":1,"msg":"设置已保存"}"""
         } catch (e: Exception) {
             """{"code":-1,"msg":"${e.message}"}"""
