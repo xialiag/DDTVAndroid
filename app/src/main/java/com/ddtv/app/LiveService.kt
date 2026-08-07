@@ -35,11 +35,13 @@ class LiveService : Service() {
         private var running = false
         fun isRunning(): Boolean = running
 
-        // 息屏保录制:设置开关开 且 有录制中房间 时才持有 WakeLock(省电)
+        // 息屏保录制:设置开关开 且 有活跃房间(录制中 或 监控中)时才持有 WakeLock
+        // 注意:PARTIAL_WAKE_LOCK 保持 CPU 不休眠——轮询检测(开播检测)的 RoomPoll
+        // 线程同样依赖 CPU,若仅"录制中"持锁,息屏无录制时 CPU 休眠会检测不到开播
         @Volatile private var wlRequested = false
         fun refreshWakeLock() {
             wlRequested = RoomManager.settings.keepRecordingOnLock &&
-                com.ddtv.app.core.RoomManager.getRooms().any { it.recState == "recording" }
+                com.ddtv.app.core.RoomManager.getRooms().isNotEmpty()
         }
     }
 
