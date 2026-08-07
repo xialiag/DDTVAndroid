@@ -87,7 +87,7 @@ class DanmakuClient(private val card: RoomCard) {
                         return
                     }
                     val delay = minOf(5000L * (1L shl minOf(failCount - 1, 3)), 60000L)
-                    if (failCount > 1) Logger.d("Danmaku", "[${card.roomId}] 弹幕服务器获取失败，${delay / 1000}s 后重试")
+                    Logger.w("Danmaku", "[${card.roomId}] 弹幕服务器获取失败(第 $failCount 次)，${delay / 1000}s 后重试")
                     Thread.sleep(delay)
                     continue
                 }
@@ -173,10 +173,14 @@ class DanmakuClient(private val card: RoomCard) {
             client.setConnectionLostTimeout(0)
             // connectBlocking 在连接建立(onOpen)后即返回，必须在此保持连接直到关闭，
             // 否则 connectLoop 会每 3 秒新建连接，旧连接堆积直到各自超时被断（日志表现为反复重连）
-            if (client.connectBlocking()) {
+            // 30s 连接超时：TCP 黑洞/握手挂起时不会无限阻塞（否则无日志且永不重试）
+            if (client.connectBlocking(30, java.util.concurrent.TimeUnit.SECONDS)) {
                 while (!stopped && !client.isClosed()) {
                     try { Thread.sleep(500) } catch (_: InterruptedException) { break }
                 }
+            } else {
+                Logger.w("Danmaku", "[${card.roomId}] 弹幕连接超时(30s) $uri")
+                listener?.onStatus(card.roomId, false, "连接超时，重试中")
             }
         } catch (e: Exception) {
             Logger.w("Danmaku", "[${card.roomId}] 连接失败: ${e.message}")

@@ -25,6 +25,39 @@ class DDTVBridge(private val context: Context, private val webView: WebView) {
     init {
         // 修复任务状态变化 → 推 JS 任务列表
         com.ddtv.app.core.RepairTaskManager.listener = { pushRepairTasks() }
+        startMainWatchdog()
+    }
+
+    // ============ 主线程健康看门狗(ANR 自愈) ============
+    // 背景:大直播间弹幕 + 多路录制时,高频 pushToJs(evaluateJavascript)会淹没主线程
+    // 消息队列 → 点击无响应 + ANR 弹窗。看门狗每 3s 检测主线程心跳,阻塞超 5s 判定繁忙:
+    // ①打日志 ②丢弃积压弹幕(只留最新 100 条) ③弹幕批量窗口 300ms→2s;主线程恢复后自动回缩。
+    private val mainHandler = android.os.Handler(android.os.Looper.getMainLooper())
+    @Volatile private var mainThreadTick = System.currentTimeMillis()
+    @Volatile private var mainBusy = false
+    @Volatile private var watchdogLogCooldown = 0L
+
+    private fun startMainWatchdog() {
+        Thread({
+            while (true) {
+                try { Thread.sleep(3000) } catch (_: InterruptedException) { break }
+                val now = System.currentTimeMillis()
+                val stall = now - mainThreadTick
+                mainBusy = stall > 5000
+                if (mainBusy) {
+                    // 降载:丢弃积压弹幕,只留最新 100 条
+                    var dropped = 0
+                    while (danmakuQueue.size > 100) { danmakuQueue.poll(); dropped++ }
+                    if (dropped > 0 && now - watchdogLogCooldown > 10000) {
+                        watchdogLogCooldown = now
+                        Logger.w("Bridge", "主线程阻塞 ${stall}ms,自动降载(丢弃积压弹幕 $dropped 条,批量窗口 2s)")
+                    } else if (dropped == 0 && now - watchdogLogCooldown > 30000) {
+                        watchdogLogCooldown = now
+                        Logger.w("Bridge", "主线程阻塞 ${stall}ms,已降载等待恢复")
+                    }
+                }
+            }
+        }, "MainWatchdog").apply { isDaemon = true; start() }
     }
 
     // ============ 主题 ============
@@ -1326,6 +1359,7 @@ class DDTVBridge(private val context: Context, private val webView: WebView) {
 
     fun pushToJs(payload: String) {
         webView.post {
+            mainThreadTick = System.currentTimeMillis()
             try {
                 webView.evaluateJavascript(
                     "window.onNativeEvent && window.onNativeEvent($payload)", null
@@ -1351,7 +1385,9 @@ class DDTVBridge(private val context: Context, private val webView: WebView) {
         val shouldSchedule = synchronized(danmakuFlushLock) {
             if (danmakuFlushScheduled) false else { danmakuFlushScheduled = true; true }
         }
-        if (shouldSchedule) webView.postDelayed({ flushDanmaku() }, 300)
+        // 主线程繁忙时拉大批量窗口(2s),恢复后回缩 300ms
+        val window = if (mainBusy) 2000L else 300L
+        if (shouldSchedule) webView.postDelayed({ flushDanmaku() }, window)
     }
 
     private fun flushDanmaku() {
@@ -1359,6 +1395,12 @@ class DDTVBridge(private val context: Context, private val webView: WebView) {
         if (danmakuQueue.isEmpty()) return
         val batch = ArrayList<com.ddtv.app.core.DanmakuItem>(danmakuQueue.size)
         while (true) { danmakuQueue.poll()?.let { batch.add(it) } ?: break }
+        // 单批上限 500(与弹幕面板 DOM 上限一致),超出丢弃最旧,避免超大 JSON 卡主线程
+        if (batch.size > 500) {
+            val drop = batch.size - 500
+            repeat(drop) { batch.removeAt(0) }
+            Logger.d("Bridge", "弹幕单批超限,丢弃最旧 $drop 条")
+        }
         val arr = JSONArray()
         batch.forEach { arr.put(danmakuToJson(it)) }
         pushToJs("""{"type":"danmaku","items":$arr}""")
