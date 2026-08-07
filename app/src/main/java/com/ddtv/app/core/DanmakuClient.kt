@@ -350,7 +350,7 @@ class DanmakuClient(private val card: RoomCard) {
                     user = data.optString("username", ""),
                     uid = data.optLong("uid", 0),
                     content = "开通了${data.optString("gift_name", "舰长")}",
-                    extra = "¥${data.optLong("price", 0)}"
+                    extra = "¥${data.optLong("price", 0) / 1000.0}"
                 )
             }
             cmd == "GUARD_RENEW" -> {
