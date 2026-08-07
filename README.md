@@ -17,6 +17,9 @@ B 站直播自动录制工具 —— 按原版 [CHKZL/DDTV](https://github.com/C
 - **录制历史**:按次记录,支持批量管理(多选删除)
 - **调试服务器**(端口 19864):浏览器实时查看状态/日志/崩溃日志/历史日志,设置中开关,默认关闭
 - **自动更新**:检查 GitHub Releases,启动静默检查 + 手动检查
+- **稳定性自愈**:弹幕批量推送 + 录制进度节流防主线程阻塞;主线程看门狗检测到阻塞自动降载;前端 JS 卡死自动 reload 自愈(恢复原视图);事件停滞自动补拉
+- **屏幕常亮**:设置页开关,保持屏幕常亮方便查看状态
+- **息屏保活**:前台服务 + WakeLock 无条件持有,息屏后开播检测/录制/弹幕持续运行
 
 ## 安装
 
@@ -24,7 +27,8 @@ B 站直播自动录制工具 —— 按原版 [CHKZL/DDTV](https://github.com/C
 
 | 包 | 说明 |
 |---|---|
-| `DDTV-x.y.z-ffmpeg-8.release.apk` | FFmpeg 8.1.2 引擎(默认推荐) |
+| `DDTV-x.y.z-ffmpeg-9.release.apk` | FFmpeg 9.0 引擎(默认推荐) |
+| `DDTV-x.y.z-ffmpeg-8.release.apk` | FFmpeg 8.1.2 引擎 |
 | `DDTV-x.y.z-ffmpeg-6.release.apk` | FFmpeg 6.1.6 引擎(兼容备用) |
 
 - Android 7.0+(arm64)
@@ -60,9 +64,10 @@ B 站直播自动录制工具 —— 按原版 [CHKZL/DDTV](https://github.com/C
 ## 构建
 
 ```bash
-./build-apk.sh            # release, FFmpeg 8(默认)
+./build-apk.sh            # release, FFmpeg 9(默认)
 ./build-apk.sh 6 release  # release, FFmpeg 6
-./build-apk.sh all release# release, FFmpeg 6 + 8 双版本
+./build-apk.sh 8 release  # release, FFmpeg 8
+./build-apk.sh all release# release, FFmpeg 6 + 8 + 9 三版本
 ./build-apk.sh debug      # debug
 ```
 
@@ -76,6 +81,27 @@ B 站直播自动录制工具 —— 按原版 [CHKZL/DDTV](https://github.com/C
 - FFmpeg 非 GPL 构建不含 libx264,完整转码使用内置 mpeg4 编码器(Android 播放器兼容)
 
 ## 更新日志
+
+### v0.7.9
+- 稳定性:前端 JS 卡死自动检测与自愈——15s 心跳探针,45s 无响应自动 reload 页面(最多 2 次),恢复上次所在视图与弹幕房间;事件停滞(30s 无推送)自动补拉全量
+- 新增:设置页「屏幕常亮」开关(FLAG_KEEP_SCREEN_ON 即时生效)
+- 保活:前台服务 + WakeLock 无条件持有,息屏后开播检测/录制/弹幕持续运行
+
+### v0.7.8
+- 修复:上舰(舰长/提督/总督)金额单位错误(price 为金瓜子,此前显示 ¥198000,现正确换算)
+- 修复:银瓜子/免费礼物不再显示虚假金额(仅 GOLD 金瓜子礼物换算)
+- 稳定性:弹幕推送批量合并(300ms 攒批,大直播间不再逐条淹没主线程)、录制进度推送节流(1s 1 次)
+- 稳定性:主线程看门狗——检测到主线程阻塞自动降载(丢弃积压弹幕+拉大批量窗口),恢复后自动回缩
+- 稳定性:弹幕连接 30s 超时自愈(此前 TCP 黑洞时无限阻塞、无日志、永不重试)
+
+### v0.7.7
+- 修复:设置页关闭调试服务器时前端报错(JSON 缺闭合大括号导致解析异常、开关回弹)
+- 修复:检查更新提示"更新仓库未配置"(prefs 中 update_repo 为空字符串时不回退默认值)
+- 优化:调试服务器主动关闭时日志不再显示为异常
+
+### v0.7.6
+- 支持 FFmpeg 9.0:新增 ffmpeg-kit-full-v9.aar(libavcodec 63.1.100 / libavformat 63.1.100)
+- 默认 FFmpeg 版本改为 9;编译时 `-PffmpegVersion=6|8|9` 三版本可选,`build-apk.sh all` 一次构建三个
 
 ### v0.7.5
 - 轮播(liveStatus=2)彻底不录制:不触发开播事件、不连弹幕、不上报小心心;直播中转轮播立即停录;轮播→直播自动恢复录制(手动点「立即录制」仍可显式录制轮播)
