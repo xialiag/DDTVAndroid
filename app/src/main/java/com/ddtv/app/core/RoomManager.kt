@@ -835,6 +835,7 @@ object RoomManager {
             fileNameFormat = prefs.getString("file_name_format", "") ?: "",
             repairDeleteSource = prefs.getBoolean("repair_delete_source", true),
             debugServer = prefs.getBoolean("debug_server", false),
+            keepScreenOn = prefs.getBoolean("keep_screen_on", false),
             updateRepo = prefs.getString("update_repo", "xialiag/DDTVAndroid")?.takeIf { it.isNotBlank() } ?: "xialiag/DDTVAndroid",
             autoUpdate = prefs.getBoolean("auto_update", true),
         )
@@ -858,6 +859,7 @@ object RoomManager {
             .putString("file_name_format", settings.fileNameFormat)
             .putBoolean("repair_delete_source", settings.repairDeleteSource)
             .putBoolean("debug_server", settings.debugServer)
+            .putBoolean("keep_screen_on", settings.keepScreenOn)
             .putString("update_repo", settings.updateRepo)
             .putBoolean("auto_update", settings.autoUpdate)
             .apply()

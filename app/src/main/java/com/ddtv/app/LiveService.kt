@@ -51,12 +51,12 @@ class LiveService : Service() {
         // 立即显示通知，避免 Android 12+ 未及时 startForeground 导致 ANR
         startForeground(NOTIFICATION_ID, buildNotification())
 
-        // WakeLock：防止 CPU 在录制/监控时休眠
+        // WakeLock:无条件持有,保证息屏后 CPU 持续运行——轮询(开播检测)、录制、弹幕都依赖它
         try {
             val pm = getSystemService(Context.POWER_SERVICE) as PowerManager
             wakeLock = pm.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "DDTV:LiveWakeLock")
             wakeLock?.setReferenceCounted(false)
-            wakeLock?.acquire(60 * 60 * 1000L) // 1小时超时
+            wakeLock?.acquire(60 * 60 * 1000L) // 1小时超时,由下方线程续期
             Logger.i("Service", "WakeLock 已获取")
         } catch (e: Exception) {
             Logger.w("Service", "获取 WakeLock 失败: ${e.message}")
