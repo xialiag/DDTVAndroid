@@ -1617,7 +1617,14 @@ function onNativeEvent(evt) {
     switch(evt.type) {
     case 'rooms_changed': refreshRooms(); if(state.view==='history') renderHistoryPanel(); break;
     case 'room_update': refreshRoomById(evt.roomId); break;
-    case 'danmaku': appendDanmaku(evt.item); break;
+    case 'danmaku':
+      // 批量推送(items 数组,300ms 窗口合并):批量渲染免逐条滚动回流
+      if (evt.items) {
+        const stream=$('#dmStream');
+        for (let i=0;i<evt.items.length;i++) appendDanmaku(evt.items[i],true);
+        if (stream && evt.items.length) stream.scrollTop=stream.scrollHeight;
+      } else if (evt.item) appendDanmaku(evt.item);
+      break;
     case 'danmaku_status':
       // 弹幕连接状态：失败时可点击重连
       updateDmConn(!!evt.connected, evt.msg);

@@ -1338,7 +1338,32 @@ class DDTVBridge(private val context: Context, private val webView: WebView) {
 
     fun pushRoomsChanged() = pushToJs("""{"type":"rooms_changed"}""")
     fun pushRoomUpdate(roomId: Long) = pushToJs("""{"type":"room_update","roomId":$roomId}""")
-    fun pushDanmaku(item: com.ddtv.app.core.DanmakuItem) = pushToJs("""{"type":"danmaku","item":${danmakuToJson(item)}}""")
+
+    // ============ 弹幕批量推送 ============
+    // 大直播间弹幕风暴下逐条 pushToJs 会让主线程被 evaluateJavascript 淹没
+    // (点击无响应 + ANR);按 300ms 窗口合并成数组一次推送。
+    private val danmakuQueue = java.util.concurrent.ConcurrentLinkedQueue<com.ddtv.app.core.DanmakuItem>()
+    private val danmakuFlushLock = Any()
+    private var danmakuFlushScheduled = false
+
+    fun pushDanmaku(item: com.ddtv.app.core.DanmakuItem) {
+        danmakuQueue.add(item)
+        val shouldSchedule = synchronized(danmakuFlushLock) {
+            if (danmakuFlushScheduled) false else { danmakuFlushScheduled = true; true }
+        }
+        if (shouldSchedule) webView.postDelayed({ flushDanmaku() }, 300)
+    }
+
+    private fun flushDanmaku() {
+        synchronized(danmakuFlushLock) { danmakuFlushScheduled = false }
+        if (danmakuQueue.isEmpty()) return
+        val batch = ArrayList<com.ddtv.app.core.DanmakuItem>(danmakuQueue.size)
+        while (true) { danmakuQueue.poll()?.let { batch.add(it) } ?: break }
+        val arr = JSONArray()
+        batch.forEach { arr.put(danmakuToJson(it)) }
+        pushToJs("""{"type":"danmaku","items":$arr}""")
+    }
+
     fun pushDanmakuStatus(roomId: Long, connected: Boolean, msg: String) = pushToJs(
         JSONObject().apply {
             put("type", "danmaku_status")
