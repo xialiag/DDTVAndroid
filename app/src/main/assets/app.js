@@ -219,6 +219,7 @@ function switchView(view) {
     return;
   }
   state.view = view;
+  try { localStorage.setItem('ddtv_view', view); } catch(e){}
   state._roomsRendered = false;  // 主动切视图：列表重新播放入场动画
   state._filesRendered = false;
   document.querySelectorAll('.ab-btn').forEach(b => b.classList.toggle('active', b.dataset.view === view));
@@ -741,7 +742,7 @@ function refreshDanmakuStatus() {
   } catch(e){}
 }
 
-function switchDanmakuRoom(rid) { state.danmakuRoom = Number(rid); renderEditor(); }
+function switchDanmakuRoom(rid) { state.danmakuRoom = Number(rid); try { localStorage.setItem('ddtv_dmroom', String(rid)); } catch(e){} renderEditor(); }
 function clearDanmaku() { const s=$('#dmStream'); if(s) s.innerHTML=''; }
 
 function sendDm() {
@@ -1394,6 +1395,11 @@ function renderSettings() {
     <div class="switch-row"><div class="sw-text"><div class="sw-label">电池优化白名单</div><div class="sw-desc">后台持续录制不被系统休眠</div></div>
       <div class="sw-right"><span class="perm-state" id="permBattery">…</span>
       <button class="btn btn-sec btn-sm" onclick="requestPerm('battery')">授权</button></div></div>
+    <h2>保活</h2>
+    <div class="switch-row"><div class="sw-text"><div class="sw-label">屏幕常亮</div><div class="sw-desc">保持屏幕常亮,方便查看录制/弹幕状态</div></div>
+      <label class="switch"><input type="checkbox" id="setKeepScreen" onchange="saveSettings()"><span class="slider"></span></label></div>
+    <div class="switch-row"><div class="sw-text"><div class="sw-label">息屏保录制</div><div class="sw-desc">屏幕关闭后保持 CPU 运行,录制不断流(耗电增加;仅录制中持锁)</div></div>
+      <label class="switch"><input type="checkbox" id="setKeepRec" onchange="saveSettings()"><span class="slider"></span></label></div>
     <h2>调试</h2>
     <div class="switch-row"><div class="sw-text"><div class="sw-label">调试服务器</div><div class="sw-desc">端口 19864，本机/同一WiFi可查看状态与日志；默认关闭</div></div>
       <label class="switch"><input type="checkbox" id="setDebug" onchange="toggleDebugServer()"><span class="slider"></span></label></div>
@@ -1420,6 +1426,8 @@ function renderSettings() {
     $('#setRemind').checked=s.remindLive; $('#setBlock').value=s.blockBarrage||''; $('#setFmt').value=s.fileNameFormat||'';
     $('#setAutoUpdate').checked=!!s.autoUpdate;
     $('#setDebug').checked=!!s.debugServer;
+    $('#setKeepScreen').checked=!!s.keepScreenOn;
+    $('#setKeepRec').checked=!!s.keepRecordingOnLock;
     $('#setOutputDir').value=s.outputDir||''; }
   refreshPermStatus();
 }
@@ -1431,7 +1439,9 @@ function saveSettings() {
     repairDeleteSource:$('#setRepDel').checked,flvAppendOnReconnect:$('#setAppend').checked,
     blockBarrage:$('#setBlock').value.trim(),fileNameFormat:$('#setFmt').value.trim(),
     autoUpdate:$('#setAutoUpdate').checked,
-    debugServer:$('#setDebug').checked};
+    debugServer:$('#setDebug').checked,
+    keepScreenOn:$('#setKeepScreen').checked,
+    keepRecordingOnLock:$('#setKeepRec').checked};
   const r=JSON.parse(AndroidBridge.setSettings(JSON.stringify(s)));
   toast(r.msg, r.code<0?'err':'ok'); if(r.code>0){state.settings=s;updateStatusbar();}
 }
@@ -1614,6 +1624,7 @@ function updateStatusbar() {
 function onNativeEvent(evt) {
   // 单条脏数据不应中断整个事件处理
   try {
+    state.lastEventTs = Date.now();  // 事件停滞检测用
     switch(evt.type) {
     case 'rooms_changed': refreshRooms(); if(state.view==='history') renderHistoryPanel(); break;
     case 'room_update': refreshRoomById(evt.roomId); break;
@@ -1893,14 +1904,30 @@ function init() {
   document.querySelectorAll('.ab-btn').forEach(b => { b.onclick = () => switchView(b.dataset.view); });
   try{state.settings=JSON.parse(AndroidBridge.getSettings());}catch(e){}
   state.version = state.settings ? (state.settings.version || '') : '';
+  // reload(前端卡死自愈)后恢复上次视图与弹幕房间
+  try { const v = localStorage.getItem('ddtv_view'); if (v) state.view = v; } catch(e){}
+  try { const r = localStorage.getItem('ddtv_dmroom'); if (r) state.danmakuRoom = Number(r) || null; } catch(e){}
+  state.lastEventTs = Date.now();
   try{state.account=JSON.parse(AndroidBridge.getAccount());}catch(e){}
   // 初始主题(system 时跟随系统)
   try { state.theme = AndroidBridge.getThemeSync() || 'system'; } catch(e){ try { state.theme = localStorage.getItem('theme') || 'system'; } catch(e2){} }
   applyTheme(state.theme);
   if (window.matchMedia) window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', e => { if(state.theme==='system') applyTheme('system'); });
   refreshRooms(); updateLayout();
+  // 恢复的视图非 explorer 时渲染对应页面(JS 卡死 reload 自愈后不白屏)
+  if (state.view !== 'explorer') switchView(state.view);
   AndroidBridge.setPolling(true);
   setInterval(()=>{ if(state.view==='explorer') refreshRooms(); else if(state.view==='files'){ loadFiles(); updateFileListPageSilent(); } else if(state.view==='data'){ loadStats(); updateStatsPanel(); } }, 5000);
+  // 事件停滞兜底:有活跃房间(录制中/弹幕开)但 30s 无任何推送事件 → 主动拉全量刷新
+  setInterval(()=>{
+    const now = Date.now();
+    if (!state.lastEventTs || now - state.lastEventTs <= 30000) return;
+    const busy = state.rooms.some(r => r.recState==='recording' || (r.danmakuOpen && (r.liveStatus===1||r.liveStatus===2)));
+    if (!busy) return;
+    state.lastEventTs = now;  // 防连续触发
+    if (state.view === 'danmaku') loadDanmakuHistory();
+    else refreshRooms();
+  }, 10000);
 }
 init();
 

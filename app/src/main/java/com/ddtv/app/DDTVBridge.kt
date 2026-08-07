@@ -25,7 +25,65 @@ class DDTVBridge(private val context: Context, private val webView: WebView) {
     init {
         // 修复任务状态变化 → 推 JS 任务列表
         com.ddtv.app.core.RepairTaskManager.listener = { pushRepairTasks() }
+        applyScreenOn(RoomManager.settings.keepScreenOn)
         startMainWatchdog()
+        startJsProbe()
+    }
+
+    // ============ JS 心跳探针(前端卡死检测与自愈) ============
+    // WebView 的 JS 线程/渲染卡死时主线程可能仍正常(推送照常入队但不执行),
+    // 用 evaluateJavascript 探针确认 JS 是否响应:45s 无响应 → reload 自愈
+    // (前端 init() 会从 bridge 重拉全量状态;视图/弹幕房间由 localStorage 恢复)
+    @Volatile private var lastJsAck = System.currentTimeMillis()
+    @Volatile private var jsReloadCount = 0
+    @Volatile private var lastJsReload = 0L
+
+    private fun startJsProbe() {
+        Thread({
+            while (true) {
+                try { Thread.sleep(15000) } catch (_: InterruptedException) { break }
+                try {
+                    webView.post {
+                        // 回调执行 = JS 线程确实响应(主线程 post 执行不代表 JS 活着)
+                        webView.evaluateJavascript("window.__jsPing=(window.__jsPing||0)+1") {
+                            lastJsAck = System.currentTimeMillis()
+                        }
+                    }
+                } catch (_: Exception) {}
+            }
+        }, "JsProbe").apply { isDaemon = true; start() }
+    }
+
+    private fun checkJsHealth() {
+        val now = System.currentTimeMillis()
+        val stall = now - lastJsAck
+        if (stall <= 45000) return
+        // 已 reload 过 2 次仍无响应:停止自动 reload(防循环),仅保持降载
+        if (jsReloadCount >= 2 || now - lastJsReload < 90000) {
+            if (jsReloadCount >= 2 && now - lastJsReload > 600000) {
+                // 10 分钟后再给一次机会(可能已恢复又再次卡死)
+                jsReloadCount = 0
+            }
+            return
+        }
+        jsReloadCount++
+        lastJsReload = now
+        Logger.w("Bridge", "前端 JS ${stall / 1000}s 无响应,第 $jsReloadCount 次 reload 自愈")
+        try {
+            webView.post { webView.reload() }
+        } catch (_: Exception) {}
+    }
+
+    // ============ 屏幕常亮(设置项) ============
+
+    private fun applyScreenOn(on: Boolean) {
+        try {
+            mainHandler.post {
+                val activity = context as? android.app.Activity ?: return@post
+                if (on) activity.window.addFlags(android.view.WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+                else activity.window.clearFlags(android.view.WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+            }
+        } catch (_: Exception) {}
     }
 
     // ============ 主线程健康看门狗(ANR 自愈) ============
@@ -44,6 +102,7 @@ class DDTVBridge(private val context: Context, private val webView: WebView) {
                 val now = System.currentTimeMillis()
                 val stall = now - mainThreadTick
                 mainBusy = stall > 5000
+                checkJsHealth()
                 if (mainBusy) {
                     // 降载:丢弃积压弹幕,只留最新 100 条
                     var dropped = 0
@@ -305,6 +364,8 @@ class DDTVBridge(private val context: Context, private val webView: WebView) {
             put("fileNameFormat", s.fileNameFormat)
             put("repairDeleteSource", s.repairDeleteSource)
             put("debugServer", s.debugServer)
+            put("keepScreenOn", s.keepScreenOn)
+            put("keepRecordingOnLock", s.keepRecordingOnLock)
             put("updateRepo", s.updateRepo)
             put("autoUpdate", s.autoUpdate)
             put("outputDir", RoomManager.outputDir.absolutePath)
@@ -331,11 +392,15 @@ class DDTVBridge(private val context: Context, private val webView: WebView) {
                 recordMode = o.optString("recordMode", recordMode)
                 flvAppendOnReconnect = o.optBoolean("flvAppendOnReconnect", flvAppendOnReconnect)
                 debugServer = o.optBoolean("debugServer", debugServer)
+                keepScreenOn = o.optBoolean("keepScreenOn", keepScreenOn)
+                keepRecordingOnLock = o.optBoolean("keepRecordingOnLock", keepRecordingOnLock)
                 updateRepo = o.optString("updateRepo", updateRepo)
                 autoUpdate = o.optBoolean("autoUpdate", autoUpdate)
             }
             RoomManager.saveSettings()
             com.ddtv.app.core.LiveRecorder.applySettings(RoomManager.settings)
+            applyScreenOn(RoomManager.settings.keepScreenOn)
+            com.ddtv.app.LiveService.refreshWakeLock()
             """{"code":1,"msg":"设置已保存"}"""
         } catch (e: Exception) {
             """{"code":-1,"msg":"${e.message}"}"""

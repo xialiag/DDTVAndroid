@@ -28,6 +28,8 @@ data class AppSettings(
     var repairDeleteSource: Boolean = true,  // 修复/转码成功后删除源文件(对齐原版 _DeleteOriginalFileAfterRepair)
     var flvAppendOnReconnect: Boolean = true, // FLV 断流重连后同文件续写(原版 Append 行为);关=断流即切新文件分段
     var debugServer: Boolean = false,    // 调试服务器开关(19864 端口,状态/日志查看;默认关,防局域网他人访问)
+    var keepScreenOn: Boolean = false,   // 屏幕常亮(设置页开关,FLAG_KEEP_SCREEN_ON)
+    var keepRecordingOnLock: Boolean = false, // 息屏保录制:屏幕关闭时持有 WakeLock 保证录制不断流(默认关,省电)
     var updateRepo: String = "xialiag/DDTVAndroid",  // 自动更新源 GitHub owner/repo(空=不检查)
     var autoUpdate: Boolean = false,      // 启动时静默检查更新
 ) {
@@ -49,6 +51,8 @@ data class AppSettings(
         put("repairDeleteSource", repairDeleteSource)
         put("flvAppendOnReconnect", flvAppendOnReconnect)
         put("debugServer", debugServer)
+        put("keepScreenOn", keepScreenOn)
+        put("keepRecordingOnLock", keepRecordingOnLock)
         put("updateRepo", updateRepo)
         put("autoUpdate", autoUpdate)
     }
