@@ -325,12 +325,19 @@ class DanmakuClient(private val card: RoomCard) {
             }
             cmd == "SEND_GIFT" -> {
                 val data = obj.optJSONObject("data") ?: return
+                val giftName = data.optString("giftName", "礼物")
+                val num = data.optInt("num", 1)
+                val price = data.optLong("price", 0)
+                // price 单位金瓜子(1000=1元);coin_type=GOLD 才是付费礼物,
+                // SILVER(银瓜子)/免费礼物不换算成金额
+                val extra = if (data.optString("coin_type", "GOLD") == "GOLD" && price > 0)
+                    "¥${price * num / 1000.0}" else ""
                 DanmakuItem(
                     roomId = roomId, type = "SEND_GIFT",
                     user = data.optString("uname", ""),
                     uid = data.optLong("uid", 0),
-                    content = "赠送了 ${data.optString("giftName", "礼物")} ×${data.optInt("num", 1)}",
-                    extra = "¥${data.optLong("price", 0) * data.optInt("num", 1) / 1000.0}"
+                    content = "赠送了 $giftName ×$num",
+                    extra = extra
                 )
             }
             cmd == "SUPER_CHAT_MESSAGE" -> {
