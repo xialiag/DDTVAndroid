@@ -41,7 +41,8 @@ object DebugServer {
                         Thread({ handle(sock) }, "DebugConn").apply { isDaemon = true; start() }
                     }
                 } catch (e: Exception) {
-                    Logger.w("Debug", "调试服务器退出: ${e.message}")
+                    // 主动 stop() 会 close ServerSocket 使 accept 抛 SocketException,属正常关闭
+                    if (running) Logger.w("Debug", "调试服务器异常退出: ${e.message}")
                 } finally {
                     running = false
                 }
@@ -53,6 +54,7 @@ object DebugServer {
         running = false
         try { server?.close() } catch (_: Exception) {}
         server = null
+        Logger.i("Debug", "调试服务器已关闭")
     }
 
     private fun handle(sock: java.net.Socket) {

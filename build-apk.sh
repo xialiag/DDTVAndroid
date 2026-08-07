@@ -2,10 +2,11 @@
 # ============================================================
 # DDTV Android APK 构建脚本（参考 BBDownAndroid/build-apk.sh）
 # 用法：
-#   ./build-apk.sh            # release, FFmpeg 8（默认）
-#   ./build-apk.sh debug      # debug, FFmpeg 8
+#   ./build-apk.sh            # release, FFmpeg 9（默认）
+#   ./build-apk.sh debug      # debug, FFmpeg 9
 #   ./build-apk.sh 6 release  # release, FFmpeg 6
-#   ./build-apk.sh all release# release, FFmpeg 6 + 8 双版本
+#   ./build-apk.sh 8 release  # release, FFmpeg 8
+#   ./build-apk.sh all release# release, FFmpeg 6 + 8 + 9 三版本
 #
 # 自动处理：
 #   1. AAR 路径修复：反斜杠 zip 条目(jni\arm64-v8a\) → 正斜杠
@@ -13,16 +14,16 @@
 # ============================================================
 set -e
 
-FF_VER="${1:-8}"
+FF_VER="${1:-9}"
 case "$FF_VER" in
-  6|8) BUILD_TYPE="${2:-release}" ;;
+  6|8|9) BUILD_TYPE="${2:-release}" ;;
   all) BUILD_TYPE="${2:-release}" ;;
-  debug|release) BUILD_TYPE="$FF_VER"; FF_VER="8" ;;
-  *) echo "用法：$0 [6|8|all] [debug|release]"; exit 1 ;;
+  debug|release) BUILD_TYPE="$FF_VER"; FF_VER="9" ;;
+  *) echo "用法：$0 [6|8|9|all] [debug|release]"; exit 1 ;;
 esac
 case "$BUILD_TYPE" in
   debug|release) ;;
-  *) echo "用法：$0 [6|8|all] [debug|release]"; exit 1 ;;
+  *) echo "用法：$0 [6|8|9|all] [debug|release]"; exit 1 ;;
 esac
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}" )" && pwd)"
@@ -30,7 +31,7 @@ APP_DIR="${SCRIPT_DIR}/app"
 LIBS_DIR="${APP_DIR}/libs"
 DIST_DIR="${SCRIPT_DIR}/dist"
 OUTPUT_DIR="${APP_DIR}/build/outputs/apk/${BUILD_TYPE}"
-AAR="${LIBS_DIR}/ffmpeg-kit-full-v8.aar"
+AAR="${LIBS_DIR}/ffmpeg-kit-full-v9.aar"
 
 case "$(uname -s)" in
   MINGW*|MSYS*|CYGWIN*) ENV_NAME="windows" ;;
@@ -102,8 +103,8 @@ if [ ! -f "$APK" ]; then
 fi
 mkdir -p "$DIST_DIR"
 if [ "$FF_VER" = "all" ]; then
-  # all 模式:构建 FFmpeg 6 和 8 两个版本
-  for v in 6 8; do
+  # all 模式:构建 FFmpeg 6、8、9 三个版本
+  for v in 6 8 9; do
     ./gradlew "assemble${BUILD_TYPE^}" --console=plain "-PffmpegVersion=$v"
     cp "$APK" "${DIST_DIR}/DDTV-${VERSION_NAME}-ffmpeg-${v}.${BUILD_TYPE}.apk"
   done

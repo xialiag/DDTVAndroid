@@ -320,12 +320,12 @@ class DDTVBridge(private val context: Context, private val webView: WebView) {
         RoomManager.settings.debugServer = on
         RoomManager.saveSettings()
         if (on) com.ddtv.app.core.DebugServer.start() else com.ddtv.app.core.DebugServer.stop()
-        return """{"code":1,"msg":"${if (on) "调试服务器已开启(端口 19864)" else "调试服务器已关闭"}"""
+        return """{"code":1,"msg":"${if (on) "调试服务器已开启(端口 19864)" else "调试服务器已关闭"}"}"""
     }
 
     // ============ 自动更新（GitHub Releases，参照原版 ProgramUpdates） ============
 
-    private val currentVersion: String = "0.7.5"
+    private val currentVersion: String = "0.7.6"
 
     /** 解析 "v0.7.0" / "0.7.0-beta1" 为可比较数字段列表 */
     private fun versionParts(v: String): List<Long> {
