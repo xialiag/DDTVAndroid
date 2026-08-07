@@ -111,14 +111,15 @@ recordLoop(外层, 取流→选线路→分段)
 ### 构建
 
 ```bash
-./build-apk.sh            # release, FFmpeg 8(默认)
-./build-apk.sh 6 release  # FFmpeg 6
-./build-apk.sh all release# 6 + 8 双版本
+./build-apk.sh            # release, FFmpeg 9(默认)
+./build-apk.sh 6 release  # release, FFmpeg 6
+./build-apk.sh 8 release  # release, FFmpeg 8
+./build-apk.sh all release# 6 + 8 + 9 三版本
 ```
 
 - 脚本:gradle 传 `-PffmpegVersion`,自动 AAR 自检(native 库数量)+ apksigner 签名验证
 - SDK:`/opt/android-sdk`(Platform 33 + Build-Tools 34.0.0,ARM64 需替换 x86_64 二进制)
-- FFmpegKit AAR:`app/libs/ffmpeg-kit-full-v{N}.aar`,同源构建链在 BBDownAndroid(`ffmpeg-8.1.2-src/` + `ffmpeg-kit-src/`);Java API 包名 `com.arthenica.ffmpegkit`
+- FFmpegKit AAR:`app/libs/ffmpeg-kit-full-v{N}.aar`(v6/v8/v9 三版本并存,来自 xialiag/ffmpeg-kit 同源构建链);Java API 包名 `com.arthenica.ffmpegkit`
 
 ### 版本号同步点(改版本必查)
 
@@ -130,17 +131,18 @@ recordLoop(外层, 取流→选线路→分段)
 
 ### 发布流程
 
-1. 构建双版本:`./build-apk.sh all release`
-2. 解包校验三件套:`unzip -o -q dist/DDTV-*.apk "assets/*" && cmp` 与 `app/src/main/assets/` 一致
+1. 构建三版本:`./build-apk.sh all release`
+2. 解包校验三件套:`unzip -o -q dist/DDTV-*.apk "assets/*" && cmp` 与 `app/src/main/assets/` 一致;APK 内 libavcodec.so md5 对照对应版本 AAR
 3. 提交推送:`git add -A && git commit && git push origin main`
 4. 打 tag:**必须与 versionName 数字一致**(`v0.7.0`,不要带 `-ff8` 后缀,否则更新检测版本比较会把 tag 解析成更新版本误报)
-5. GitHub Release:`releases/latest` 语义 → 发布时**包含 v6 + v8 两个 APK asset**(删旧再传,同名 asset 不能覆盖)
+5. GitHub Release:`releases/latest` 语义 → 发布时**包含 v6 + v8 + v9 三个 APK asset**;同名 asset 不能覆盖,**先 GET assets 拿 id DELETE 旧 asset,再 POST 上传**
 6. 更新 README 功能表/更新日志
 
 ### 发布权限
 
-- 本地 `~/.git-credentials` 的 fine-grained PAT 只有 Contents 写权限(能 push 代码,不能建 Release)
-- 建 Release/传 asset 需带 **Releases 权限**的 token,或 GitHub 网页手动操作
+- 本地 `~/.git-credentials` 的 fine-grained PAT 已含 Releases 权限(建 Release/传 asset 用 **Authorization: Bearer** 头;git push 走 store helper 自动)
+- API 建 Release:POST /repos/xialiag/DDTVAndroid/releases(body 中文 changelog);传 asset:POST uploads.github.com(Content-Type: application/octet-stream)
+- Bad credentials 说明 token 无 Releases 权限 → 让用户手动建
 
 ## 已知坑
 

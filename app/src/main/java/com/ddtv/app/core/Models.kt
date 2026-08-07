@@ -92,7 +92,17 @@ data class RoomCard(
     var lastError: String = "",
     var files: MutableList<String> = mutableListOf(),  // 本次直播文件
     var manualStop: Boolean = false,  // 手动停止录制标记：直播不断时轮询不自动重启（自动录制开关仍生效于下轮开播）
-)
+) {
+    /**
+     * 录制目录名：主播真名；名字为空或仍为占位（"房间 X"/"RoomX"）时统一用 Room<id>。
+     * 占位名"房间 X"绝不进入目录命名——否则 migratePlaceholderFolder 会因名字以"房间 "开头
+     * 永远跳过迁移，占位目录就永远改不回真名。真名刷出后由迁移逻辑把 Room<id> 改名为真名目录。
+     */
+    fun dirName(): String {
+        val n = name.trim()
+        return if (n.isEmpty() || n.startsWith("房间 ") || n.startsWith("Room")) "Room$roomId" else n
+    }
+}
 
 /** 弹幕消息 */
 data class DanmakuItem(

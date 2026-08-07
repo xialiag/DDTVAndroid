@@ -348,13 +348,24 @@ object RoomManager {
     }
 
     /** 把“房间 <id>/Room<id>”占位目录迁移为真实主播名目录；目标已存在时合并内容
-     *  force=true：由录制器在段边界调用（上一个分片已关闭，无打开句柄，可安全迁移），绕过录制中保护 */
+     *  force=true：由录制器在段边界调用（上一个分片已关闭，无打开句柄，可安全迁移），绕过录制中保护
+     *
+     *  占位名（空/"房间 X"/"RoomX"）时无法迁移（没有真名可迁），只把历史遗留的
+     *  “房间 <id>”目录归一化为 Room<id> 统一形态，等真名刷出后的下一次调用再迁移。
+     *  目录命名（RoomCard.dirName()）保证新录制目录只可能是真名或 Room<id>。 */
     fun migratePlaceholderFolder(card: RoomCard, force: Boolean = false) {
-        val name = card.name.trim()
-        if (name.isEmpty() || name.startsWith("房间 ") || name.startsWith("Room")) return
-        if (!force && LiveRecorder.isRecording(card.roomId)) return
         val root = outputDir
         if (!root.isDirectory) return
+        if (!force && LiveRecorder.isRecording(card.roomId)) return
+        val name = card.name.trim()
+        if (name.isEmpty() || name.startsWith("房间 ") || name.startsWith("Room")) {
+            val ph = java.io.File(root, "房间 ${card.roomId}")
+            val roomDir = java.io.File(root, "Room${card.roomId}")
+            if (ph.isDirectory && !roomDir.exists() && ph.renameTo(roomDir)) {
+                Logger.i("Room", "占位目录归一化: ${ph.name} → ${roomDir.name}")
+            }
+            return
+        }
         val target = java.io.File(root, sanitizeFileName(name))
         listOf("房间 ${card.roomId}", "Room${card.roomId}").forEach { old ->
             val oldDir = java.io.File(root, old)
@@ -366,6 +377,8 @@ object RoomManager {
                     }
                 } else {
                     // 目标已存在（名字就绪后录过新段）：把占位目录内容合并进目标，同名文件保留目标
+                    // 合并后清掉移空的子目录，否则旧目录永远非空、空壳残留（历史 bug：日期目录同名时子文件
+                    // 移走但空目录不删，Room<id> 一直留着）
                     oldDir.listFiles()?.forEach { child ->
                         val dest = java.io.File(target, child.name)
                         if (child.isDirectory) {
@@ -376,6 +389,9 @@ object RoomManager {
                                     val d2 = java.io.File(dest, f.name)
                                     if (!d2.exists()) f.renameTo(d2)
                                 }
+                                if (child.listFiles()?.isEmpty() == true && child.delete()) {
+                                    Logger.d("Room", "合并后清理空子目录: $old/${child.name}")
+                                }
                             }
                         } else {
                             if (!dest.exists()) child.renameTo(dest)
@@ -383,6 +399,8 @@ object RoomManager {
                     }
                     if (oldDir.listFiles()?.isEmpty() == true && oldDir.delete()) {
                         Logger.i("Room", "录制目录已合并: $old → ${target.name}")
+                    } else {
+                        Logger.w("Room", "占位目录合并未清空，留待下次迁移: $old → ${target.name}")
                     }
                 }
             } catch (_: Exception) {}
@@ -534,7 +552,13 @@ object RoomManager {
         historyCoverCache[name]?.let { if (now - it.first < 60000) return it.second.ifEmpty { null } }
         val uri = try {
             val ctx = appContext
-            val dir = java.io.File(outputDir, sanitizeFileName(name))
+            // 历史条目可能存的是占位名（"房间 <id>"），此时实际目录是 Room<id>，从占位名解析 id 兜底
+            val dirName = name.trim().let { n ->
+                if (n.startsWith("房间 ") || n.startsWith("Room")) {
+                    n.removePrefix("房间 ").removePrefix("Room").toLongOrNull()?.let { "Room$it" } ?: n
+                } else n
+            }
+            val dir = java.io.File(outputDir, sanitizeFileName(dirName))
             if (ctx == null || !dir.isDirectory) null
             else {
                 var best: java.io.File? = null
@@ -760,7 +784,7 @@ object RoomManager {
         val items = danmakuBuffer[card.roomId] ?: return
         if (items.isEmpty()) return
         try {
-            val dir = java.io.File(outputDir, sanitizeFileName(card.name.ifEmpty { "Room${card.roomId}" }) +
+            val dir = java.io.File(outputDir, sanitizeFileName(card.dirName()) +
                     java.io.File.separator + java.text.SimpleDateFormat("yyyy-MM-dd", java.util.Locale.CHINA).format(java.util.Date()))
             dir.mkdirs()
             val stamp = java.text.SimpleDateFormat("HH-mm-ss", java.util.Locale.CHINA).format(java.util.Date())

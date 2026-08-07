@@ -132,7 +132,7 @@ object LiveRecorder {
         Thread({
             try {
                 RoomManager.getRooms().filter { it.audioOnly }.forEach { card ->
-                    val dir = File(RoomManager.outputDir, sanitize(card.name.ifEmpty { "Room${card.roomId}" }))
+                    val dir = File(RoomManager.outputDir, sanitize(card.dirName()))
                     if (!dir.isDirectory) return@forEach
                     dir.walkTopDown().forEach { f ->
                         if (!f.isFile) return@forEach
@@ -198,6 +198,8 @@ object LiveRecorder {
             card.recState = "idle"
             notifyError(card.roomId, e.message ?: "录制异常")
             notifyStateChange(card.roomId, "idle", "")
+            // 异常收尾也迁移占位目录（此时流已断，无打开句柄，可安全改名）
+            try { RoomManager.migratePlaceholderFolder(card, force = true) } catch (_: Exception) {}
         } finally {
             // 条件移除：若期间已重新 start（新任务入 map），不要误删新任务
             synchronized(running) { running.remove(card.roomId, task) }
@@ -371,7 +373,7 @@ object LiveRecorder {
                 }
             } catch (_: Exception) {}
         }
-        val dir = File(outputRoot, sanitize(name.ifEmpty { "Room${card.roomId}" }) +
+        val dir = File(outputRoot, sanitize(card.dirName()) +
                 File.separator + SimpleDateFormat("yyyy-MM-dd", Locale.CHINA).format(Date()))
         dir.mkdirs()
         val now = Date()
