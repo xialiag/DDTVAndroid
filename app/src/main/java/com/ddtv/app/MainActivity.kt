@@ -198,6 +198,8 @@ class MainActivity : AppCompatActivity() {
         override fun onHeartbeatLog(msg: String) = bridge.pushLog(0, "info", msg)
     }
 
+    private val lastProgressPush = java.util.concurrent.ConcurrentHashMap<Long, Long>()
+
     private val uiRecorderListener = object : LiveRecorder.Listener {
         override fun onStateChange(roomId: Long, state: String, file: String) {
             bridge.pushRoomUpdate(roomId)
@@ -208,7 +210,12 @@ class MainActivity : AppCompatActivity() {
             })
         }
         override fun onProgress(roomId: Long, size: Long, speed: Long) {
-            bridge.pushRoomUpdate(roomId)
+            // 每读块触发,节流到 1 秒 1 次,否则主线程被 evaluateJavascript 淹没(ANR)
+            val now = System.currentTimeMillis()
+            if (now - (lastProgressPush[roomId] ?: 0L) >= 1000) {
+                lastProgressPush[roomId] = now
+                bridge.pushRoomUpdate(roomId)
+            }
         }
         override fun onSegmentEnd(roomId: Long, file: String) {
             bridge.pushRoomUpdate(roomId)

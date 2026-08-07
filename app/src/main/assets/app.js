@@ -1,4 +1,4 @@
-/* ===== DDTV Android — UI 逻辑 v0.7.6 =====
+/* ===== DDTV Android — UI 逻辑 v0.7.7 =====
    结构:工具 → 图标 → 状态 → 主题 → 弹层 → 布局 → 各视图渲染 → 原生回调 → 操作 → 初始化
    模板规则:禁止内联样式(动态数据除外),一律用 app.css 里的类;图标用 ic() */
 'use strict';
@@ -1617,7 +1617,14 @@ function onNativeEvent(evt) {
     switch(evt.type) {
     case 'rooms_changed': refreshRooms(); if(state.view==='history') renderHistoryPanel(); break;
     case 'room_update': refreshRoomById(evt.roomId); break;
-    case 'danmaku': appendDanmaku(evt.item); break;
+    case 'danmaku':
+      // 批量推送(items 数组,300ms 窗口合并):批量渲染免逐条滚动回流
+      if (evt.items) {
+        const stream=$('#dmStream');
+        for (let i=0;i<evt.items.length;i++) appendDanmaku(evt.items[i],true);
+        if (stream && evt.items.length) stream.scrollTop=stream.scrollHeight;
+      } else if (evt.item) appendDanmaku(evt.item);
+      break;
     case 'danmaku_status':
       // 弹幕连接状态：失败时可点击重连
       updateDmConn(!!evt.connected, evt.msg);
