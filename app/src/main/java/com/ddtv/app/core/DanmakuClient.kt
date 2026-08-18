@@ -46,11 +46,17 @@ class DanmakuClient(private val card: RoomCard) {
         listener?.onStatus(card.roomId, false, "已断开")
     }
 
-    /** 发送弹幕（需登录，返回是否已发出） */
-    fun sendDanmaku(text: String): Boolean {
-        val client = ws ?: return false
-        if (!connected || text.isBlank()) return false
-        val acc = AccountManager.account ?: return false
+    /** 弹幕发送回执队列（op=1 响应，按发送顺序 complete；发送结果以服务器回执为准） */
+    private val sendAcks = java.util.concurrent.ConcurrentLinkedQueue<java.util.concurrent.CompletableFuture<Pair<Int, String>>>()
+
+    /** 发送弹幕（需登录），返回 (是否发出, 原因)。等待服务器 op=1 回执（3s 超时），
+     *  不再"发完即 true"——csrf 错误/风控/未登录等失败会如实上报给 UI */
+    fun sendDanmaku(text: String): Pair<Boolean, String> {
+        val client = ws ?: return (false to "弹幕未连接")
+        if (!connected) return (false to "弹幕连接未就绪")
+        if (text.isBlank()) return (false to "弹幕内容为空")
+        val acc = AccountManager.account ?: return (false to "未登录")
+        if (acc.csrf.isEmpty()) return (false to "缺少登录凭证(csrf)，请重新登录")
         return try {
             val body = JSONObject().apply {
                 put("mode", 1)
@@ -63,11 +69,23 @@ class DanmakuClient(private val card: RoomCard) {
                 put("color", 16777215)
                 put("fontsize", 25)
             }
+            val future = java.util.concurrent.CompletableFuture<Pair<Int, String>>()
+            sendAcks.offer(future)
             client.send(pack(1, body.toString().toByteArray()))
-            true
+            val (code, msg) = try {
+                future.get(3, java.util.concurrent.TimeUnit.SECONDS)
+            } catch (e: java.util.concurrent.TimeoutException) {
+                sendAcks.remove(future)
+                (-1 to "发送超时，服务器未确认")
+            } catch (e: Exception) {
+                sendAcks.remove(future)
+                (-1 to "发送中断: ${e.message}")
+            }
+            if (code == 0) (true to "已发送")
+            else (false to (msg.ifBlank { "发送被拒绝(code=$code)" }))
         } catch (e: Exception) {
             Logger.w("Danmaku", "[${card.roomId}] 发送弹幕失败: ${e.message}")
-            false
+            (false to "发送异常: ${e.message}")
         }
     }
 
@@ -278,6 +296,18 @@ class DanmakuClient(private val card: RoomCard) {
 
     private fun dispatch(op: Int, body: ByteArray) {
         when (op) {
+            1 -> {
+                // 弹幕发送回执：成功 code=0；失败 code!=0 带 msg（csrf 校验失败/未登录/风控等）
+                val future = sendAcks.poll()
+                if (future != null) {
+                    try {
+                        val obj = JSONObject(String(body, Charsets.UTF_8))
+                        future.complete(obj.optInt("code", -1) to obj.optString("msg", ""))
+                    } catch (_: Exception) {
+                        future.complete(-1 to "回执解析失败")
+                    }
+                }
+            }
             3 -> {
                 if (body.size >= 4) {
                     val popularity = (body[0].toLong() and 0xFF shl 24) or
