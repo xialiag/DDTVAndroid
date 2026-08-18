@@ -90,6 +90,10 @@ class DDTVBridge(private val context: Context, private val webView: WebView) {
     // 背景:大直播间弹幕 + 多路录制时,高频 pushToJs(evaluateJavascript)会淹没主线程
     // 消息队列 → 点击无响应 + ANR 弹窗。看门狗每 3s 检测主线程心跳,阻塞超 5s 判定繁忙:
     // ①打日志 ②丢弃积压弹幕(只留最新 100 条) ③弹幕批量窗口 300ms→2s;主线程恢复后自动回缩。
+    // 注意:tick 原先只在 pushToJs(业务推送)时刷新,空闲期(无弹幕/无事件)会停更导致
+    // 假阳性降载;且降载日志经 Logger.listener→pushLog 又会刷新 tick,形成 30s 自激循环。
+    // 修复:看门狗自身每 3s post 一次保底心跳,空闲时也持续刷新 tick;主线程真卡死时
+    // 心跳 runnable 排队不执行,tick 停更,stall 照常增长,判定不受影响。
     private val mainHandler = android.os.Handler(android.os.Looper.getMainLooper())
     @Volatile private var mainThreadTick = System.currentTimeMillis()
     @Volatile private var mainBusy = false
@@ -99,6 +103,8 @@ class DDTVBridge(private val context: Context, private val webView: WebView) {
         Thread({
             while (true) {
                 try { Thread.sleep(3000) } catch (_: InterruptedException) { break }
+                // 保底心跳:主线程空闲时持续刷新 tick(避免业务推送停更导致的假阳性)
+                mainHandler.post { mainThreadTick = System.currentTimeMillis() }
                 val now = System.currentTimeMillis()
                 val stall = now - mainThreadTick
                 mainBusy = stall > 5000
@@ -420,7 +426,7 @@ class DDTVBridge(private val context: Context, private val webView: WebView) {
 
     // ============ 自动更新（GitHub Releases，参照原版 ProgramUpdates） ============
 
-    private val currentVersion: String = "0.7.11"
+    private val currentVersion: String = "0.7.12"
 
     /** 解析 "v0.7.0" / "0.7.0-beta1" 为可比较数字段列表 */
     private fun versionParts(v: String): List<Long> {
