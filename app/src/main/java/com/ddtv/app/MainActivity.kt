@@ -123,9 +123,19 @@ class MainActivity : AppCompatActivity() {
         webView.loadUrl("file:///android_asset/index.html")
 
         AccountManager.listener = object : AccountManager.Listener {
+            // uid 去重:AccountInit 启动恢复时会激活登录态 + 末尾"补一次通知"两次回调,
+            // 后者仅用于刷新 UI 资料,不应重复提示"登录成功"(此前启动时日志出现两条)
+            private var lastLoginPushUid = -1L
             override fun onLoginStateChanged(account: com.ddtv.app.core.AccountInfo?) {
                 bridge.pushAccount()
-                if (account != null) bridge.pushLog(0, "info", "登录成功: ${account.uname}")
+                if (account != null) {
+                    if (account.uid != lastLoginPushUid) {
+                        lastLoginPushUid = account.uid
+                        bridge.pushLog(0, "info", "登录成功: ${account.uname}")
+                    }
+                } else {
+                    lastLoginPushUid = -1L
+                }
             }
             override fun onQrcodeUpdated(imageData: String?, message: String) {
                 bridge.pushQrcode(imageData, message)
