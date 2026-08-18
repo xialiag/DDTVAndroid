@@ -509,7 +509,7 @@ object RoomManager {
         } else if (!isLive && wasLive) {
             // 下播
             Logger.i("Room", "[${card.name}] 下播了")
-            notifyLog(card.roomId, "info", "⏹ 直播结束")
+            notifyLog(card.roomId, "info", "直播结束")
             card.liveStatusPrev = false
             stopRecording(card)
             saveDanmakuFile(card)
@@ -735,10 +735,10 @@ object RoomManager {
         danmakuClients.clear()
     }
 
-    /** 发送弹幕（需登录） */
-    fun sendDanmaku(roomId: Long, text: String): Boolean {
-        val client = danmakuClients[roomId] ?: return false
-        if (!client.connected) return false
+    /** 发送弹幕（需登录），返回 (是否成功, 原因) */
+    fun sendDanmaku(roomId: Long, text: String): Pair<Boolean, String> {
+        val client = danmakuClients[roomId] ?: return (false to "弹幕未连接(未开启该房间弹幕)")
+        if (!client.connected) return (false to "弹幕连接未就绪")
         return client.sendDanmaku(text)
     }
 

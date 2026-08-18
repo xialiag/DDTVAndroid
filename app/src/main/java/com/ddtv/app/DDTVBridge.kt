@@ -348,8 +348,9 @@ class DDTVBridge(private val context: Context, private val webView: WebView) {
 
     @JavascriptInterface
     fun sendDanmaku(roomId: Long, text: String): String {
-        val ok = RoomManager.sendDanmaku(roomId, text)
-        return if (ok) """{"code":1,"msg":"已发送"}""" else """{"code":-1,"msg":"发送失败，请先登录"}"""
+        val (ok, reason) = RoomManager.sendDanmaku(roomId, text)
+        return if (ok) """{"code":1,"msg":"已发送"}"""
+        else """{"code":-1,"msg":${JSONObject.quote(reason)}}"""
     }
 
     // ============ 设置 ============
@@ -426,7 +427,7 @@ class DDTVBridge(private val context: Context, private val webView: WebView) {
 
     // ============ 自动更新（GitHub Releases，参照原版 ProgramUpdates） ============
 
-    private val currentVersion: String = "0.7.13"
+    private val currentVersion: String = "0.7.14"
 
     /** 解析 "v0.7.0" / "0.7.0-beta1" 为可比较数字段列表 */
     private fun versionParts(v: String): List<Long> {

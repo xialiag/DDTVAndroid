@@ -200,7 +200,7 @@ class MainActivity : AppCompatActivity() {
         }
         override fun onLiveEnd(roomId: Long) {
             bridge.pushRoomUpdate(roomId)
-            bridge.pushLog(roomId, "info", "⏹ 直播结束")
+            bridge.pushLog(roomId, "info", "直播结束")
         }
         override fun onDanmakuEvent(item: DanmakuItem) = bridge.pushDanmaku(item)
         override fun onDanmakuStatus(roomId: Long, connected: Boolean, msg: String) = bridge.pushDanmakuStatus(roomId, connected, msg)
