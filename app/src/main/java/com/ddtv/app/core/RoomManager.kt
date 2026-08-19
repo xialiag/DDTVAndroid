@@ -492,9 +492,8 @@ object RoomManager {
         val isLive = card.liveStatus == 1
         val wasLive = card.liveStatusPrev
         if (isLive && !wasLive) {
-            // 开播
+            // 开播（日志经 notifyLog 打一条;不再单独 Logger.i 避免前端/DebugServer 双打）
             card.manualStop = false  // 新一轮直播：清除手动停止标记，恢复自动录制
-            Logger.i("Room", "[${card.name}] 开播了: ${card.title}")
             notifyLog(card.roomId, "info", "检测到开播: ${card.title}")
             // 首轮：已开播且自动录制 → 强制触发（原版 IsFirst 兜底）
             if (isFirstRound && !card.autoRecord) {
@@ -507,8 +506,7 @@ object RoomManager {
             if (card.danmakuOpen) ensureDanmaku(card)
             if (settings.watchHeartbeat) WatchHeartbeat.register(card.roomId, card.uid)
         } else if (!isLive && wasLive) {
-            // 下播
-            Logger.i("Room", "[${card.name}] 下播了")
+            // 下播（日志经 notifyLog 打一条"直播结束";不再单独 Logger.i 避免前端/DebugServer 双打）
             notifyLog(card.roomId, "info", "直播结束")
             card.liveStatusPrev = false
             stopRecording(card)

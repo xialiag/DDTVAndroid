@@ -38,6 +38,20 @@ class DDTVBridge(private val context: Context, private val webView: WebView) {
     @Volatile private var jsReloadCount = 0
     @Volatile private var lastJsReload = 0L
 
+    /** App 是否前台可见（MainActivity onStart/onStop 同步）。后台时国产 ROM 会冻结
+     *  WebView 的 JS 执行,探针必然无响应——此时不判"无响应"也不 reload(无效且刷屏)。 */
+    @Volatile private var appVisible = true
+
+    /** 回到前台：重置探针基准,给 JS 一个 grace 期,避免后台冻结造成的滞后被立即误判 */
+    fun onAppVisible() {
+        lastJsAck = System.currentTimeMillis()
+        appVisible = true
+    }
+
+    fun onAppHidden() {
+        appVisible = false
+    }
+
     private fun startJsProbe() {
         Thread({
             while (true) {
@@ -55,6 +69,7 @@ class DDTVBridge(private val context: Context, private val webView: WebView) {
     }
 
     private fun checkJsHealth() {
+        if (!appVisible) return  // 后台冻结场景:不判无响应、不 reload(见 onAppHidden 注释)
         val now = System.currentTimeMillis()
         val stall = now - lastJsAck
         if (stall <= 45000) return
@@ -427,7 +442,7 @@ class DDTVBridge(private val context: Context, private val webView: WebView) {
 
     // ============ 自动更新（GitHub Releases，参照原版 ProgramUpdates） ============
 
-    private val currentVersion: String = "0.7.15"
+    private val currentVersion: String = "0.7.16"
 
     /** 解析 "v0.7.0" / "0.7.0-beta1" 为可比较数字段列表 */
     private fun versionParts(v: String): List<Long> {
