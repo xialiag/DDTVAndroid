@@ -955,7 +955,10 @@ object RoomManager {
                     audioOnly = Json.objBool(o, "audioOnly", false),
                     cutSeconds = Json.objLong(o, "cutSeconds", 0),
                     cutSizeMB = Json.objLong(o, "cutSizeMB", 0),
-                    liveStatusPrev = Json.objInt(o, "liveStatus", 0) == 1,
+                    // liveStatusPrev 是会话内开播/下播边沿检测变量,不跨会话携带:
+                    // 若从持久化 liveStatus==1 推断,App 退出期间直播结束 → 重启后首轮轮询
+                    // 会误报"直播结束"(用户视角:该直播间从未开播)。冷启动一律视为"之前未播"。
+                    liveStatusPrev = false,
                 )
                 rooms[card.roomId] = card
             }
