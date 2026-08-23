@@ -38,6 +38,9 @@ class MainActivity : AppCompatActivity() {
     private lateinit var bridge: DDTVBridge
 
     companion object {
+        /** FFmpeg 版本日志进程级只打一次（Activity 重建不重复刷） */
+        private val ffmpegVersionLogged = java.util.concurrent.atomic.AtomicBoolean(false)
+
         private const val REQ_NOTIFICATION = 1003
         private const val REQ_BATTERY = 1004
 
@@ -161,12 +164,15 @@ class MainActivity : AppCompatActivity() {
         com.ddtv.app.core.LiveRecorder.extractPendingAudioFiles()
 
         // 启动时打印 ffmpeg 引擎版本（调试日志：确认打包的是 v8 还是 v6）
+        // 进程级只打一次：Activity 被系统重建(onCreate 重跑)时不再重复刷日志
         Thread({
             try {
-                // 用 FFmpegKitConfig 直读运行时版本（BBDownAndroid 同款 API）；execute("-version") 解析输出在部分构建下为空
-                val ff = com.arthenica.ffmpegkit.FFmpegKitConfig.getFFmpegVersion()
-                val kit = com.arthenica.ffmpegkit.FFmpegKitConfig.getVersion()
-                Logger.i("FFmpeg", "FFmpeg $ff (kit $kit)")
+                if (ffmpegVersionLogged.compareAndSet(false, true)) {
+                    // 用 FFmpegKitConfig 直读运行时版本（BBDownAndroid 同款 API）；execute("-version") 解析输出在部分构建下为空
+                    val ff = com.arthenica.ffmpegkit.FFmpegKitConfig.getFFmpegVersion()
+                    val kit = com.arthenica.ffmpegkit.FFmpegKitConfig.getVersion()
+                    Logger.i("FFmpeg", "FFmpeg $ff (kit $kit)")
+                }
             } catch (e: Exception) {
                 Logger.w("FFmpeg", "获取 ffmpeg 版本失败: ${e.message}")
             }
@@ -196,11 +202,11 @@ class MainActivity : AppCompatActivity() {
         override fun onRoomUpdate(roomId: Long) = bridge.pushRoomUpdate(roomId)
         override fun onLiveStart(roomId: Long) {
             bridge.pushRoomUpdate(roomId)
-            bridge.pushLog(roomId, "info", "检测到开播")
+            // "检测到开播" 已由 RoomManager.notifyLog → onLog 推送,这里不重复
         }
         override fun onLiveEnd(roomId: Long) {
             bridge.pushRoomUpdate(roomId)
-            bridge.pushLog(roomId, "info", "直播结束")
+            // "直播结束" 日志已由 RoomManager.notifyLog → onLog 推送一次,这里不重复
         }
         override fun onDanmakuEvent(item: DanmakuItem) = bridge.pushDanmaku(item)
         override fun onDanmakuStatus(roomId: Long, connected: Boolean, msg: String) = bridge.pushDanmakuStatus(roomId, connected, msg)
@@ -298,6 +304,19 @@ class MainActivity : AppCompatActivity() {
             requestNotificationPermission()
             webView.postDelayed({ requestBatteryExemption() }, 2500)
         }
+    }
+
+    override fun onStart() {
+        super.onStart()
+        // 前台可见：恢复 JS 无响应检测（重置探针 grace，避免后台冻结后一回来就误判 reload）
+        bridge.onAppVisible()
+    }
+
+    override fun onStop() {
+        super.onStop()
+        // 后台不可见：暂停 JS 无响应检测与 reload（国产 ROM 后台冻结 WebView 时探针必然无响应，
+        // 此前导致无效 reload 刷屏且 reload 本身在后台也不生效）
+        bridge.onAppHidden()
     }
 
     private fun requestNotificationPermission() {
