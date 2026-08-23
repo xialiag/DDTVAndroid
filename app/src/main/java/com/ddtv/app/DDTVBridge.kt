@@ -437,7 +437,7 @@ class DDTVBridge(private val context: Context, private val webView: WebView) {
         RoomManager.settings.debugServer = on
         RoomManager.saveSettings()
         if (on) com.ddtv.app.core.DebugServer.start() else com.ddtv.app.core.DebugServer.stop()
-        return """{"code":1,"msg":"${if (on) "调试服务器已开启(端口 19864)" else "调试服务器已关闭"}"}"""
+        return """{"code":1,"msg":"${if (on) "调试服务器已开启: " + com.ddtv.app.core.DebugServer.accessUrl() else "调试服务器已关闭"}"}"""
     }
 
     // ============ 自动更新（GitHub Releases，参照原版 ProgramUpdates） ============

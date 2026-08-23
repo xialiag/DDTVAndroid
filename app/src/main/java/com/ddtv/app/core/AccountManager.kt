@@ -103,15 +103,28 @@ object AccountManager {
                 }
                 val acc = account
                 if (acc != null) {
-                    // 参照 BBDownAndroid:本地有 cookie 即保留登录态;nav 仅补全资料,失败不否定
+                    // 启动时校验:nav 明确未登录(如重置密码被踢下线)必须清登录态;
+                    // 仅"网络异常(Error)"才兜底保留本地 cookie,避免误登出/也避免僵尸登录态
                     when (val st = BiliLiveApi.checkNavLogin()) {
                         is BiliLiveApi.NavLoginState.LoggedIn -> activate(st.info)
-                        else -> {
+                        BiliLiveApi.NavLoginState.LoggedOut -> {
+                            Logger.w("Account", "启动时 nav 明确未登录,清除本地登录态(UID ${acc.uid})")
+                            removeType()
+                            account = null
+                            Http.cookie = ""
+                            // 重新注入 buvid 指纹,保留匿名访问能力
+                            val spi = BiliLiveApi.getSpi()
+                            if (spi != null) Http.cookie = buildString {
+                                if (spi.first.isNotEmpty()) append("buvid3=").append(spi.first)
+                                if (spi.second.isNotEmpty()) append("; buvid4=").append(spi.second)
+                            }
+                        }
+                        BiliLiveApi.NavLoginState.Error -> {
                             val enriched = enrichAccount(acc)
                             account = enriched
                             Http.cookie = enriched.cookie
                             saveType(enriched)
-                            Logger.w("Account", "启动时 nav 未确认,以本地 cookie 兜底恢复(UID ${enriched.uid})")
+                            Logger.w("Account", "启动时 nav 网络异常,以本地 cookie 兜底恢复(UID ${enriched.uid})")
                         }
                     }
                 }

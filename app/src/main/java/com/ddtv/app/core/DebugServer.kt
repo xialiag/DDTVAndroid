@@ -1,9 +1,12 @@
 package com.ddtv.app.core
 
+import java.net.Inet4Address
 import java.net.InetAddress
+import java.net.NetworkInterface
 import java.net.ServerSocket
 import java.text.SimpleDateFormat
 import java.util.Date
+import java.util.Enumeration
 import java.util.Locale
 
 /**
@@ -28,6 +31,45 @@ object DebugServer {
     @Volatile private var running = false
     private val lock = Any()
 
+    /** 缓存本机局域网 IP（监听前探测一次，供日志/面板/设置卡片显示） */
+    @Volatile private var localAddr: String = ""
+
+    /**
+     * 获取本机局域网 IPv4 地址（优先 wlan0/eth0 等真实网络接口，回退 loopback）。
+     * 拿不到返回空串，用于调试服务器启动时把可访问地址打印出来，免去手动查手机 IP。
+     */
+    fun localIp(): String {
+        if (localAddr.isNotEmpty()) return localAddr
+        try {
+            val addrs = NetworkInterface.getNetworkInterfaces()
+            var anySite: String? = null
+            while (addrs.hasMoreElements()) {
+                val nif = addrs.nextElement() ?: continue
+                val name = nif.name ?: continue
+                // 跳过回环/未激活/虚拟网卡，优先真实 WiFi/有线
+                if (!nif.isUp || nif.isLoopback) continue
+                if (name.startsWith("lo") || name.contains("dummy") || name.contains("docker")) continue
+                val en = nif.inetAddresses
+                while (en.hasMoreElements()) {
+                    val ia = en.nextElement()
+                    if (ia is Inet4Address && !ia.isLoopbackAddress) {
+                        val host = ia.hostAddress ?: continue
+                        // 优先 wlan/eth 等真实接口；记录第一个候选兜底
+                        if (anySite == null) anySite = host
+                        if (name.startsWith("wlan") || name.startsWith("eth") || name.startsWith("rndis") || name.startsWith("ap"))
+                            return host.also { localAddr = it }
+                    }
+                }
+            }
+            if (anySite != null) localAddr = anySite
+        } catch (_: Exception) {
+        }
+        return localAddr
+    }
+
+    /** 给 UI/日志用的可访问基址（有局域网 IP 用 IP，否则回退 127.0.0.1） */
+    fun accessUrl(): String = "http://" + (localIp().ifEmpty { "127.0.0.1" }) + ":$PORT/"
+
     fun start() {
         synchronized(lock) {
             if (running) return
@@ -35,7 +77,9 @@ object DebugServer {
             Thread({
                 try {
                     server = ServerSocket(PORT, 8, InetAddress.getByName("0.0.0.0"))
-                    Logger.i("Debug", "调试服务器已启动: 端口 $PORT (手机浏览器打开 http://127.0.0.1:$PORT/，电脑需同一WiFi用局域网IP)")
+                    // 提前探测局域网 IP，启动日志直接给出可访问地址，免去手动查手机 IP
+                    val url = accessUrl()
+                    Logger.i("Debug", "调试服务器已启动: 端口 $PORT（本机浏览器 $url ；同一WiFi电脑/助手访问同上）")
                     while (running) {
                         val sock = server?.accept() ?: break
                         Thread({ handle(sock) }, "DebugConn").apply { isDaemon = true; start() }
@@ -164,6 +208,7 @@ object DebugServer {
             .append(",\"version\":\"").append(com.ddtv.app.BuildConfig.VERSION_NAME).append('"')
             .append(",\"activeType\":\"web\"")
             .append(",\"logSeq\":").append(Logger.maxSeq())
+            .append(",\"accessUrl\":\"").append(esc(accessUrl())).append('"')
             .append(",\"web\":").append(accountJson(am.getWebAccount()))
         // 房间
         sb.append(",\"rooms\":[")
@@ -375,7 +420,8 @@ function stateHtml(s){
   document.getElementById('ver').textContent = 'v'+s.version;
   document.getElementById('loginCard').innerHTML =
     '<div class="row"><span class="k">登录方式</span><span class="v">扫码登录(网页版)</span></div>'+
-    '<div class="row"><span class="k">当前账号</span><span class="v">'+acc(s.web)+'</span></div>';
+    '<div class="row"><span class="k">当前账号</span><span class="v">'+acc(s.web)+'</span></div>'+
+    (s.accessUrl?'<div class="row"><span class="k">本机地址</span><span class="v">'+esc(s.accessUrl)+'</span></div>':'');
   document.getElementById('recCard').innerHTML =
     '<div class="row"><span class="k">监控房间</span><span class="v">'+s.rooms.length+'</span></div>'+
     '<div class="row"><span class="k">录制中</span><span class="v '+(s.recordingCount?'ok':'off')+'">'+s.recordingCount+'</span></div>'+
