@@ -28,8 +28,8 @@ android {
         applicationId "com.ddtv.app"
         minSdk 24
         targetSdk 33
-        versionCode 27
-        versionName "0.7.17"
+        versionCode 32
+        versionName "0.7.22"
         vectorDrawables.useSupportLibrary = true
         ndk {
             abiFilters 'arm64-v8a'
@@ -77,4 +77,8 @@ dependencies {
     implementation files(ffmpegAarFile)
     // FFmpegKit 的传递依赖（缺失会 NoClassDefFoundError）
     implementation 'com.arthenica:smart-exception-java:0.2.1'
+    // Media3 ExoPlayer（在线听直播：HLS/FLV 实时音频播放）
+    implementation 'androidx.media3:media3-exoplayer:1.1.1'
+    implementation 'androidx.media3:media3-exoplayer-hls:1.1.1'
+    implementation 'androidx.media3:media3-datasource:1.1.1'
 }

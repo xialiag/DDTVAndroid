@@ -213,6 +213,12 @@ svg{display:block;flex:0 0 auto}
 .tabs{flex:0 0 auto;height:36px;display:flex;background:var(--bg-tab);
   overflow-x:auto;scrollbar-width:none}
 .tabs::-webkit-scrollbar{display:none}
+/* tabs 栏播放小控制器：极简，右浮，仅显示播放状态，点击切换 */
+.listen-ctl{display:inline-flex;align-items:center;gap:5px;margin-left:auto;padding:0 12px;height:36px;
+  font-size:11px;color:var(--fg);cursor:pointer;user-select:none;flex:0 0 auto;white-space:nowrap}
+.listen-ctl:hover{background:var(--bg-hover);color:var(--fg-bright)}
+.lc-dot{width:7px;height:7px;border-radius:50%;background:var(--fg-dim);flex:0 0 auto}
+.lc-dot.on{background:var(--accent);box-shadow:0 0 0 3px rgba(251,114,153,.22)}
 .tab{display:flex;align-items:center;gap:6px;padding:0 16px;height:36px;font-size:var(--fs-sm);
   color:var(--fg-dim);white-space:nowrap;flex:0 0 auto;position:relative;
   transition:color var(--dur-fast) var(--ease)}

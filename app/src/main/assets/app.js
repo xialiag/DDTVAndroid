@@ -1,4 +1,4 @@
-/* ===== DDTV Android — UI 逻辑 v0.7.17 =====
+/* ===== DDTV Android — UI 逻辑 v0.7.22 =====
    结构:工具 → 图标 → 状态 → 主题 → 弹层 → 布局 → 各视图渲染 → 原生回调 → 操作 → 初始化
    模板规则:禁止内联样式(动态数据除外),一律用 app.css 里的类;图标用 ic() */
 'use strict';
@@ -63,7 +63,7 @@ function ic(name, size=16) {
 const state = { view:'explorer', rooms:[], settings:null, account:null,
   currentRoom:null, danmakuRoom:null, followGroups:[], followUsers:[],
   followGroupId:null, files:[], qrImage:null, history:[], stats:null,
-  theme:'system', _loginView:'main', _authTarget:null };
+  theme:'system', listen:{active:false,playing:false,roomId:0,name:''}, _loginView:'main', _authTarget:null };
 
 /* 二级页返回头（移植 BBDownAndroid subHeader，复用 tabs 栏） */
 let _subnavKey = '';
@@ -362,6 +362,7 @@ function showRoomMenu(rid, x, y) {
     `<div class="ctx-item" data-act="record">${rec?'停止录制':'立即录制'}</div>` +
     `<div class="ctx-item" data-act="audio">${r.audioOnly?'✓ 仅录音频（开）':'仅录音频（关）'}</div>` +
     `<div class="ctx-item" data-act="live">观看直播</div>` +
+    `<div class="ctx-item" data-act="listen">${isListening(rid)?'停止收听':'听直播'}</div>` +
     `<div class="ctx-item" data-act="open">打开详情</div>` +
     `<div class="ctx-item ctx-danger" data-act="remove">移除房间</div>`;
   m.querySelectorAll('.ctx-item').forEach(it => it.onclick = () => {
@@ -377,6 +378,7 @@ function showRoomMenu(rid, x, y) {
       refreshRooms();
     }
     else if (act === 'live') openLive(rid);
+    else if (act === 'listen') toggleListen(rid);
     else if (act === 'open') { state.currentRoom = rid; state._detailOpen = true; renderSidebar(); renderEditor(); }
     else if (act === 'remove') removeRoom(rid);
   });
@@ -660,6 +662,7 @@ function renderRoomDetail(rid, container) {
       ${rec?`<button class="btn btn-danger" onclick="stopRec(${r.roomId})">${ic('stop',14)} 停止录制</button>`
         :`<button class="btn btn-primary" onclick="startRec(${r.roomId})">${ic('record',14)} 立即录制</button>`}
       <button class="btn btn-sec" onclick="openLive(${r.roomId})">${ic('eye',14)} 观看直播</button>
+      <button class="btn btn-sec" onclick="toggleListen(${r.roomId})">${ic('music',14)} ${isListening(r.roomId)?'停止收听':'听直播'}</button>
       <button class="btn btn-sec" onclick="refreshRoom(${r.roomId})">${ic('refresh',14)} 刷新</button>
       <button class="btn btn-danger-sec" onclick="removeRoom(${r.roomId})">${ic('trash',14)} 移除</button></div>
     <h2>录制状态</h2>
@@ -1669,8 +1672,21 @@ function onNativeEvent(evt) {
       }
       toast('录制目录已切换','ok');
       break;
-    case 'toast':
-      toast(evt.msg, evt.level === 'err' ? 'err' : 'ok');
+    case 'listen_status':
+      // 在线听直播状态：更新本地状态 + 提示 + 刷新详情按钮文案
+      {
+        const prevLabel = state._listenLabel;
+        state.listen = { active:!!evt.active, playing:!!evt.playing, roomId:evt.roomId||0, name:evt.name||'' };
+        const label = evt.label || (evt.active ? (evt.playing ? '正在收听' : '已暂停') : '');
+        if (label && label !== prevLabel) {
+          state._listenLabel = label;
+          if (label === '缓冲中…') break;   // 缓冲频繁，不打扰
+          toast(label, /失败|出错|结束/.test(label) ? 'err' : 'ok');
+        }
+        if (state._detailOpen && state.currentRoom === (evt.roomId||0)) updateRoomDetail(state.currentRoom);
+        if (evt.active === false) state._listenLabel = '';
+        syncListenCtl();
+      }
       break;
     case 'repair_task_update':
       // 修复任务列表变化（全量刷新，签名对比防闪烁）
@@ -1807,6 +1823,51 @@ function removeRoom(rid) {
 function setAutoRecord(rid,on) { AndroidBridge.setAutoRecord(rid,on); }
 function setRemind(rid,on) { AndroidBridge.setRemind(rid,on); }
 function openLive(rid) { const r=JSON.parse(AndroidBridge.openLiveRoom(rid)); toast(r.msg, r.code<0?'err':'ok'); }
+function isListening(rid){ return state.listen && state.listen.active && state.listen.roomId === rid; }
+function toggleListen(rid){
+  const r = state.rooms.find(x=>x.roomId===rid); if(!r) return;
+  if (isListening(rid)) {
+    try{ AndroidBridge.stopListen(); }catch(e){}
+    state.listen = {active:false,playing:false,roomId:0,name:''};
+    state._listenLabel = '';
+    toast('已停止收听','ok');
+    if (state._detailOpen && state.currentRoom === rid) updateRoomDetail(rid);
+    syncListenCtl();  // 立即隐藏 tabs 控制器
+    return;
+  }
+  let res = { code:-1, msg:'启动失败' };
+  try { res = JSON.parse(AndroidBridge.startListen(rid)); } catch(e){ res = { code:-1, msg:'启动失败: '+e }; }
+  toast(res.msg, res.code<0?'err':(res.code===0?'warn':'ok'));
+  if (res.code < 0) return;
+  state.listen = {active:true, playing:false, roomId:rid, name:r.name||''};
+  if (state._detailOpen && state.currentRoom === rid) updateRoomDetail(rid);
+}
+function initListen(){
+  try {
+    const s = JSON.parse(AndroidBridge.getListenStatus());
+    state.listen = {active:!!s.active, playing:!!s.playing, roomId:s.roomId||0, name:s.name||''};
+    state._listenLabel = state.listen.active ? (state.listen.playing?'正在收听':'已暂停') : '';
+  } catch(e){ state.listen = {active:false,playing:false,roomId:0,name:''}; }
+}
+/* tabs 栏小控制器：只显示播放状态（播放中/已暂停），点击切换，极简不占空间 */
+function syncListenCtl() {
+  const bar = $('#tabs');
+  if (!bar) return;
+  let ctl = bar.querySelector('.listen-ctl');
+  const active = state.listen && state.listen.active && state.listen.roomId;
+  if (!active) { if (ctl) ctl.remove(); return; }
+  if (!ctl) {
+    ctl = document.createElement('div'); ctl.className = 'listen-ctl';
+    ctl.onclick = () => togglePause();
+    bar.appendChild(ctl);
+  }
+  const playing = state.listen.playing;
+  ctl.innerHTML = `<span class="lc-dot${playing?' on':''}"></span>${playing?'播放中':'已暂停'}`;
+  ctl.title = playing ? '点击暂停' : '点击继续';
+}
+function togglePause() {
+  try { AndroidBridge.toggleListenPlay(); } catch(e){}
+}
 function setDanmaku(rid,on) { AndroidBridge.setDanmakuOpen(rid,on); }
 function setAudioOnlyRoom(rid,on) {
   try { AndroidBridge.setAudioOnly(rid,on); } catch(e){}
@@ -1910,6 +1971,13 @@ function init() {
   try { state.theme = AndroidBridge.getThemeSync() || 'system'; } catch(e){ try { state.theme = localStorage.getItem('theme') || 'system'; } catch(e2){} }
   applyTheme(state.theme);
   if (window.matchMedia) window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', e => { if(state.theme==='system') applyTheme('system'); });
+  initListen();
+  // tabs 栏播放控制器：tabs 内容(切视图/二级页)变化时自动重插，持续显示播放状态
+  try {
+    const tb = $('#tabs');
+    if (tb) new MutationObserver(() => syncListenCtl()).observe(tb, { childList: true });
+  } catch(e){}
+  syncListenCtl();
   refreshRooms(); updateLayout();
   // 恢复的视图非 explorer 时渲染对应页面(JS 卡死 reload 自愈后不白屏)
   if (state.view !== 'explorer') switchView(state.view);
