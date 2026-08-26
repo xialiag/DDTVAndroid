@@ -251,7 +251,7 @@ object BiliLiveApi {
      */
     fun getStreamInfo(roomId: Long, qn: Int = 10000, audioOnly: Boolean = false): StreamInfo? {
         if (audioOnly) {
-            getAudioStreamInfo(roomId)?.let { return it }
+            getAudioStreamInfo(roomId, qn)?.let { return it }
             Logger.w("Api", "room=$roomId 纯音频流获取失败，回退常规流")
         }
         return getVideoStreamInfo(roomId, qn)
@@ -333,14 +333,14 @@ object BiliLiveApi {
      * 注：服务端当前即使 media_type=1 仍返回含视频 codec 的流（音频分离或已失效），
      * 纯音频文件由 LiveRecorder 录制后用 FFmpeg extractAudio 提取实现。
      */
-    private fun getAudioStreamInfo(roomId: Long): StreamInfo? {
+        private fun getAudioStreamInfo(roomId: Long, qn: Int = 150): StreamInfo? {
         return try {
-            val device = android.os.Build.MODEL.replace(" ", "+")
-            val url = "$LIVE_DOMAIN/xlive/app-room/v2/index/getRoomPlayInfo" +
-                    "?room_id=$roomId&no_playurl=0&qn=150&free_type=0&http=1&dolby=0&network=wifi&mask=0" +
-                    "&media_type=1&only_video=0&play_type=0&protocol=0,1&format=0,2&codec=0,1" +
-                    "&device_name=$device&special_scenario=0&supported_drms=0,3&eotf=&req_reason=0&cam_id=0" +
-                    "&platform=android&build=8980200&mobi_app=android&appkey=1d8b6e7d45233436&ts=${System.currentTimeMillis() / 1000}"
+            // web-room + ptype=8：B站「仅播声音」关键开关（逆向自 App 8.98.0），
+            // 服务端只下发纯音频流（无 video 元素），省流量且 ExoPlayer 稳定播放
+            val url = signUrl(
+                "$LIVE_DOMAIN/xlive/web-room/v2/index/getRoomPlayInfo?room_id=$roomId" +
+                        "&protocol=0,1&format=0,1,2&codec=0,1,2&qn=$qn&platform=web&ptype=8"
+            )
             val body = Http.get(url, referer = LIVE_WEB_DOMAIN)
             val obj = JSONObject(body)
             if (obj.optInt("code") != 0) {
