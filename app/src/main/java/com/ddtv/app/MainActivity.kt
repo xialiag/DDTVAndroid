@@ -162,6 +162,8 @@ class MainActivity : AppCompatActivity() {
 
         // 补提取：audioOnly 房间残留的未提取音频（进程被杀等场景），后台静默执行
         com.ddtv.app.core.LiveRecorder.extractPendingAudioFiles()
+        // 补转封装：意外退出/中断残留的 flv(应转 mp4 未转)，后台静默补转
+        com.ddtv.app.core.LiveRecorder.remuxPendingFlvs()
 
         // 启动时打印 ffmpeg 引擎版本（调试日志：确认打包的是 v8 还是 v6）
         // 进程级只打一次：Activity 被系统重建(onCreate 重跑)时不再重复刷日志

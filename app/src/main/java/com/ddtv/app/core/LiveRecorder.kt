@@ -154,6 +154,25 @@ object LiveRecorder {
         }, "AudioBackfill").apply { isDaemon = true; start() }
     }
 
+    /**
+     * 启动补转封装：录制目录里残留的 flv(意外退出/中断导致收尾未触发转 mp4)，
+     * 且"自动转封装 MP4"设置开启、非录制中、无对应 mp4 的，后台静默加入修复队列。
+     */
+    fun remuxPendingFlvs() {
+        try {
+            if (!RoomManager.settings.remuxAfterLive) return
+            val flvs = RoomManager.outputDir.walkTopDown()
+                .filter { it.isFile && it.extension.equals("flv", true) && !isFileBeingRecorded(it.absolutePath) }
+                .toList()
+            var pending = 0
+            flvs.forEach { f ->
+                val mp4 = File(f.absolutePath.removeSuffix(".flv") + ".mp4")
+                if (!mp4.exists() || mp4.length() == 0L) { RepairTaskManager.submit(f.absolutePath, "remux"); pending++ }
+            }
+            if (pending > 0) Logger.i("Recorder", "启动补转: $pending 个未转 mp4 的 FLV 已加入修复队列")
+        } catch (_: Exception) {}
+    }
+
     fun start(card: RoomCard): Boolean {
         synchronized(running) {
             if (running.containsKey(card.roomId)) return false
