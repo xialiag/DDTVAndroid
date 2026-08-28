@@ -197,10 +197,12 @@ object BiliLiveApi {
                 list.add(SearchLiveUser(
                     roomId = it.optLong("roomid", 0),
                     uid = it.optLong("uid", 0),
-                    uname = it.optString("uname", ""),
+                    // B 站搜索接口的 uname/title 常带 <em class="keyword"> 高亮标签与 HTML 实体，
+                    // 直接入库会在前端显示成 HTML 源码，需清干净
+                    uname = cleanSearchText(it.optString("uname", "")),
                     face = it.optString("upic", ""),
                     liveStatus = it.optInt("live_status", 0),
-                    title = it.optString("title", ""),
+                    title = cleanSearchText(it.optString("title", "")),
                     online = it.optLong("online", 0),
                     shortId = it.optLong("short_id", 0),
                 ))
@@ -210,6 +212,13 @@ object BiliLiveApi {
         }
         return list
     }
+
+    /** 清除搜索接口返回的 HTML 高亮标签与实体，避免前端显示成 HTML 源码 */
+    private fun cleanSearchText(s: String): String = s
+        .replace(Regex("<[^>]*>"), " ")
+        .replace("&amp;", "&").replace("&lt;", "<").replace("&gt;", ">")
+        .replace("&quot;", "\"").replace("&#39;", "'").replace("&nbsp;", " ")
+        .replace(Regex("\\s+"), " ").trim()
 
     /** 通过 UID 查直播间（房间号未知时） */
     fun getRoomIdByUid(uid: Long): Long? {

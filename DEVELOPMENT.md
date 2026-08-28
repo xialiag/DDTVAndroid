@@ -35,11 +35,13 @@ app/src/main/
 │   ├── DDTVBridge.kt     # JS↔Kotlin 桥(约 60 个接口)
 │   ├── LiveService.kt    # 前台服务:录制进程载体 + 通知(ic_stat_ddtv)
 │   ├── CrashHandler.kt   # 全局崩溃捕获 → logs/crash_*.txt(含设备/版本/内存/最近日志)
+│   ├── BootReceiver.kt   # 开机自启:BOOT_COMPLETED 拉起 LiveService,尊重设置 auto_start
 │   └── core/
 │       ├── RoomManager.kt    # 房间 CRUD + 批量轮询 + 录制调度 + 历史/统计 + 弹幕缓冲
 │       ├── LiveRecorder.kt   # 录制核心(FLV/HLS 分段、收尾、音频提取、补提取)
 │       ├── BiliLiveApi.kt    # B站接口(取流/房间信息/关注/签到),Wbi 签名
 │       ├── DanmakuClient.kt  # 弹幕 WebSocket(protover=3 brotli),弹幕/礼物/SC 解析
+│       ├── DanmakuExport.kt  # 弹幕→字幕/弹幕(.srt/.ass/.ass弹幕滚动),工具页导出+结束自动生成
 │       ├── WatchHeartbeat.kt # x25Kn 观看心跳(HmacChain 链式 HMAC + 纯 Kotlin SHA-224)
 │       ├── AccountManager.kt # 扫码登录(web/tv 双态)+ Cookie 粘贴
 │       ├── FFmpegRepair.kt   # 修复/转码命令构造 + 错误提取 errorOf()

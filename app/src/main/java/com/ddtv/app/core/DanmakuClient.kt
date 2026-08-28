@@ -106,10 +106,12 @@ class DanmakuClient(private val card: RoomCard) {
                     }
                     val delay = minOf(5000L * (1L shl minOf(failCount - 1, 3)), 60000L)
                     Logger.w("Danmaku", "[${card.roomId}] 弹幕服务器获取失败(第 $failCount 次)，${delay / 1000}s 后重试")
+                    listener?.onStatus(card.roomId, false, "获取弹幕服务器失败(第 $failCount 次)，${delay / 1000}s 后重试")
                     Thread.sleep(delay)
                     continue
                 }
                 failCount = 0
+                listener?.onStatus(card.roomId, false, "连接弹幕服务器 ${server.host}…")
                 connectOnce(server)
             } catch (e: Exception) {
                 Logger.w("Danmaku", "[${card.roomId}] 连接异常: ${e.message}")
@@ -124,9 +126,9 @@ class DanmakuClient(private val card: RoomCard) {
         val client = object : WebSocketClient(uri) {
             override fun onOpen(handshakedata: ServerHandshake?) {
                 Logger.i("Danmaku", "[${card.roomId}] 弹幕连接成功 $uri")
-                connected = true
+                // 认证完成后(收到 op=8 code=0)才算真正连上并启动心跳，避免"半连接"状态
                 card.danmakuCount = 0
-                listener?.onStatus(card.roomId, true, "已连接")
+                listener?.onStatus(card.roomId, false, "已连接，认证中…")
                 // 认证包（登录则带 uid + buvid）
                 val acc = AccountManager.account
                 val auth = JSONObject().apply {
@@ -141,15 +143,6 @@ class DanmakuClient(private val card: RoomCard) {
                     }
                 }
                 send(pack(7, auth.toString().toByteArray()))
-                // 心跳线程（首个心跳立即发，避免服务器 2 秒无数据断连）
-                Thread({
-                    try {
-                        while (!stopped && connected && !isClosed) {
-                            send(pack(2, "[object Object]".toByteArray()))
-                            try { Thread.sleep(10000) } catch (_: InterruptedException) { break }
-                        }
-                    } catch (_: Exception) {}
-                }, "Heartbeat-${card.roomId}").also { it.isDaemon = true; it.start() }
             }
 
             /** 服务器 ping：打日志确认到达，super 自动回 pong（服务器 2 秒无 pong 会断连） */
@@ -203,6 +196,18 @@ class DanmakuClient(private val card: RoomCard) {
         } catch (e: Exception) {
             Logger.w("Danmaku", "[${card.roomId}] 连接失败: ${e.message}")
         }
+    }
+
+    /** 认证成功后启动心跳(op=2，10s 一次)；只在认证成功时调用，避免半连接发心跳 */
+    private fun startHeartbeat(roomId: Long) {
+        Thread({
+            try {
+                while (!stopped && connected && ws?.isClosed != true) {
+                    ws?.send(pack(2, "[object Object]".toByteArray()))
+                    Thread.sleep(10000)
+                }
+            } catch (_: Exception) {}
+        }, "Heartbeat-$roomId").also { it.isDaemon = true; it.start() }
     }
 
     private fun extractBuvid(cookie: String): String {
@@ -328,14 +333,16 @@ class DanmakuClient(private val card: RoomCard) {
                 }
             }
             8 -> {
-                // 认证回应
+                // 认证回应：code=0 才算真正连上，启动心跳
                 try {
                     val obj = JSONObject(String(body, Charsets.UTF_8))
                     if (obj.optInt("code", -1) == 0) {
-                        listener?.onStatus(card.roomId, true, "认证成功")
+                        connected = true
+                        startHeartbeat(card.roomId)
+                        listener?.onStatus(card.roomId, true, "弹幕推送中")
                     } else {
                         Logger.w("Danmaku", "[${card.roomId}] 认证被拒绝: ${obj.optString("message")}")
-                        listener?.onStatus(card.roomId, false, "认证被拒绝: ${obj.optString("message")}")
+                        listener?.onStatus(card.roomId, false, "认证失败: ${obj.optString("message")}")
                     }
                 } catch (_: Exception) {}
             }
