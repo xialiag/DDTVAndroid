@@ -1,4 +1,4 @@
-/* ===== DDTV Android — UI 逻辑 v0.7.31 =====
+/* ===== DDTV Android — UI 逻辑 v0.7.32 =====
    结构:工具 → 图标 → 状态 → 主题 → 弹层 → 布局 → 各视图渲染 → 原生回调 → 操作 → 初始化
    模板规则:禁止内联样式(动态数据除外),一律用 app.css 里的类;图标用 ic() */
 'use strict';
@@ -659,7 +659,7 @@ function renderRoomDetail(rid, container) {
           <span>${ic('monitor',13)} ${esc(r.areaName||'-')}</span>
         </div>
       </div></div>
-    <div class="btn-row tight">
+    <div class="btn-row tight detail-actions">
       ${rec?`<button class="btn btn-danger" onclick="stopRec(${r.roomId})">${ic('stop',14)} 停止录制</button>`
         :`<button class="btn btn-primary" onclick="startRec(${r.roomId})">${ic('record',14)} 立即录制</button>`}
       <button class="btn btn-sec" onclick="openLive(${r.roomId})">${ic('eye',14)} 观看直播</button>
