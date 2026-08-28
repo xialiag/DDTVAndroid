@@ -802,7 +802,10 @@ object RoomManager {
                     put("extra", it.extra)
                 })
             }
-            base.apply { writeText("""{"roomId":${card.roomId},"name":"${card.name}","count":${arr.length()},"items":${arr.toString(2)}}""") }
+            // 带 .json 后缀(此前写成无后缀文件,与 files 记录/字幕扫描不一致)
+            java.io.File(base.absolutePath + ".json").writeText(
+                """{"roomId":${card.roomId},"name":"${card.name}","count":${arr.length()},"items":${arr.toString(2)}}""",
+                Charsets.UTF_8)
 
             // 2) 分类 CSV（对齐原版 Danmu.SaveDanmu / SevaGift / SevaGuardBuy / SC）
             fun fmtTime(t: Long) = java.text.SimpleDateFormat("yyyy-MM-dd HH:mm:ss", java.util.Locale.CHINA).format(java.util.Date(t))

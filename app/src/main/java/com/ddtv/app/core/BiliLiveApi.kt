@@ -200,7 +200,7 @@ object BiliLiveApi {
                     // B 站搜索接口的 uname/title 常带 <em class="keyword"> 高亮标签与 HTML 实体，
                     // 直接入库会在前端显示成 HTML 源码，需清干净
                     uname = cleanSearchText(it.optString("uname", "")),
-                    face = it.optString("upic", ""),
+                    face = it.optString("uface", ""),  // B站 live_user 搜索头像字段是 uface(// 协议相对),非 upic
                     liveStatus = it.optInt("live_status", 0),
                     title = cleanSearchText(it.optString("title", "")),
                     online = it.optLong("online", 0),
