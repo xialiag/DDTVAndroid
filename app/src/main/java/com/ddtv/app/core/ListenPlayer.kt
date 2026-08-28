@@ -18,10 +18,12 @@ import androidx.media3.exoplayer.source.ProgressiveMediaSource
 /**
  * 应用内"在线听直播"播放器（不依赖 Service）。
  *
- * 背景:部分机型(实测 Android 13)对 startForegroundService/startService 创建**独立服务**会静默拦截
- * (调用正常但不创建,无异常无日志),而同一进程内录制服务(LiveService)却正常。
- * 因此听直播改用**进程内 ExoPlayer**(仅需 Context),完全绕开服务创建;进程保活由录制服务+WakeLock 承担,
- * App 打开/录制期间可随时收听。代价:无前台通知/后台收听(该机型服务本就起不来)。
+ * 背景：部分机型(实测 Android 13)对 startForegroundService/startService 创建独立服务会**静默拦截**
+ * (调用正常但不创建,无异常无日志)，而同一进程内录制服务(LiveService)却正常。
+ * 因此听直播用**进程内 ExoPlayer**(仅需 Context)，完全绕开服务创建；进程保活由录制服务+WakeLock 承担。
+ *
+ * 并发安全：所有操作以 seq(操作序号)为准——停止/暂停/失败会递增 seq，
+ * 在途的取流线程与播放器构建检测到 seq 过期即放弃，保证任一时刻只有一个活跃播放器。
  */
 @UnstableApi
 object ListenPlayer {
@@ -35,25 +37,25 @@ object ListenPlayer {
     @Volatile private var playing = false
     private var reconnectCount = 0
     private var paused = false
+    /** 操作序号：停止/暂停/失败/重建均递增，过期的取流与构建直接放弃 */
+    @Volatile private var seq = 0L
 
     fun init(context: Context) { appCtx = context.applicationContext }
 
     fun activeRoom(): Long = currentRoomId
 
-    private fun setState(roomId: Long, p: Boolean, label: String) {
-        playing = p
-        currentRoomId = if (roomId == 0L) currentRoomId else currentRoomId
-        try { listener?.invoke(roomId, p, label) } catch (_: Exception) {}
-    }
-
-    /** 开始收听(网络取流在子线程,播放器构建在主线程) */
+    /** 开始收听(网络取流在子线程,播放器构建在主线程；seq 保证旧操作失效) */
     fun start(roomId: Long) {
         val ctx = appCtx ?: return
         Logger.i("Listen", "[player] start room=$roomId 录制中=${LiveRecorder.isRecordingRoom(roomId)}")
         paused = false
-        if (currentRoomId == roomId && player != null) { playing = true; setState(roomId, true, "正在收听"); return }
+        if (currentRoomId == roomId && player != null) {
+            playing = true
+            notify(roomId, true, "正在收听")
+            return
+        }
+        val s = ++seq
         releasePlayer()
-
         val qn = RoomManager.getRoom(roomId)?.quality ?: 150
         Thread({
             try {
@@ -62,34 +64,37 @@ object ListenPlayer {
                     Logger.w("Listen", "纯音频流获取失败，回退常规流")
                     info = BiliLiveApi.getStreamInfo(roomId, qn = qn, audioOnly = false)
                 }
+                if (s != seq) return@Thread  // 已停止/切换,放弃
                 if (info == null) { finishError(roomId, "获取直播流失败"); return@Thread }
                 if (info.hlsUrl.isEmpty() && info.flvUrl.isEmpty()) { finishError(roomId, "该直播暂无可用线路"); return@Thread }
-                // 按 CDN host 真实错开:录制中选与录制当前线路不同 host 的 FLV;始终 FLV 优先,HLS 兜底
+                // 按 CDN host 真实错开:录制中选与录制当前线路不同 host 的 FLV;FLV 优先,HLS 兜底
                 val recHost = if (LiveRecorder.isRecordingRoom(roomId)) LiveRecorder.currentStreamHost(roomId) else null
-                val flvLines = info.flvLines
-                val hlsLines = info.hlsLines
                 fun hostOf(u: String): String? = Regex("""^https?://([^/]+)""").find(u)?.groupValues?.get(1)
                 fun pickLine(lines: List<String>, exclude: String?): String? =
                     lines.firstOrNull { hostOf(it) != exclude } ?: lines.firstOrNull()
-                val flv = pickLine(flvLines, recHost)
-                val hls = pickLine(hlsLines, recHost)
+                val flv = pickLine(info.flvLines, recHost)
+                val hls = pickLine(info.hlsLines, recHost)
                 val url: String
                 val isHls: Boolean
                 if (flv != null) { url = flv; isHls = false }
                 else if (hls != null) { url = hls; isHls = true }
                 else { finishError(roomId, "该直播暂无可用线路"); return@Thread }
-                Logger.i("Listen", "[player] room=$roomId 选线=${if (isHls) "HLS" else "FLV"} url=${url.take(120)} (flv=${flvLines.size}条 hls=${hlsLines.size}条 录制节点=${recHost ?: "无"})")
+                Logger.i("Listen", "[player] room=$roomId 选线=${if (isHls) "HLS" else "FLV"} url=${url.take(120)} (flv=${info.flvLines.size}条 hls=${info.hlsLines.size}条 录制节点=${recHost ?: "无"})")
                 Logger.i("Listen", "[player] 构建播放器 url=${url.take(90)} isHls=$isHls")
-                mainHandler.post { prepareAndPlay(roomId, url, isHls) }
+                mainHandler.post {
+                    if (s != seq) return@post
+                    prepareAndPlay(roomId, s, url, isHls)
+                }
             } catch (e: Exception) {
                 Logger.e("Listen", "[player] 取流异常: ${e.message}")
-                finishError(roomId, "获取直播流失败")
+                if (s == seq) finishError(roomId, "获取直播流失败")
             }
         }, "ListenStream").apply { isDaemon = true; start() }
     }
 
-    private fun prepareAndPlay(roomId: Long, url: String, isHls: Boolean) {
+    private fun prepareAndPlay(roomId: Long, s: Long, url: String, isHls: Boolean) {
         val ctx = appCtx ?: return
+        if (s != seq) return  // 已停止/切换,放弃
         try {
             currentRoomId = roomId
             playing = true
@@ -104,6 +109,7 @@ object ListenPlayer {
             } else {
                 ProgressiveMediaSource.Factory(ds).createMediaSource(MediaItem.fromUri(url))
             }
+            releasePlayer()
             val ctx2 = ctx
             val p = ExoPlayer.Builder(ctx2).build().apply {
                 setAudioAttributes(
@@ -119,25 +125,30 @@ object ListenPlayer {
                         when (state) {
                             Player.STATE_READY -> { reconnectCount = 0; Logger.i("Listen", "[player] 播放就绪(READY) room=$roomId"); notify(roomId, true, "正在收听") }
                             Player.STATE_BUFFERING -> notify(roomId, true, "缓冲中…")
-                            Player.STATE_ENDED -> { notify(roomId, false, "直播已结束"); releasePlayer() }
+                            Player.STATE_ENDED -> { if (s == seq) { notify(roomId, false, "直播已结束"); releaseAndClear() } }
                             else -> {}
                         }
                     }
                     override fun onPlayerError(error: PlaybackException) {
                         val detail = "code=${error.errorCode} msg=${error.message ?: ""} cause=${error.cause?.javaClass?.simpleName}:${error.cause?.message ?: ""}"
                         Logger.e("Listen", "[player] 播放错误: $detail")
+                        if (s != seq) return
                         if (reconnectCount < 2) {
                             reconnectCount++
                             Logger.w("Listen", "[player] 第 $reconnectCount/2 次重连…")
                             notify(roomId, false, "播放出错，尝试重连…")
-                            mainHandler.postDelayed({ releasePlayer(); start(roomId) }, reconnectCount * 3000L)
+                            mainHandler.postDelayed({
+                                if (s != seq) return@postDelayed
+                                releasePlayer()
+                                start(roomId)
+                            }, reconnectCount * 3000L)
                         } else {
                             finishError(roomId, "播放出错（$detail）".take(64))
                         }
                     }
                     override fun onIsPlayingChanged(pp: Boolean) {
                         Logger.d("Listen", "[player] isPlaying=$pp room=$roomId")
-                        notify(roomId, pp, if (pp) "正在收听" else "缓冲中…")
+                        if (s == seq) notify(roomId, pp, if (pp) "正在收听" else "缓冲中…")
                     }
                 })
                 setMediaSource(mediaSource)
@@ -147,7 +158,7 @@ object ListenPlayer {
             player = p
         } catch (e: Exception) {
             Logger.e("Listen", "[player] 播放器构建失败: ${e.message}")
-            finishError(roomId, "播放器初始化失败")
+            if (s == seq) finishError(roomId, "播放器初始化失败")
         }
     }
 
@@ -156,24 +167,30 @@ object ListenPlayer {
         try { listener?.invoke(roomId, p, label) } catch (_: Exception) {}
     }
 
+    /** 失败：递增序号使在途取流/重试全部失效，释放并复位 */
     private fun finishError(roomId: Long, msg: String) {
         Logger.e("Listen", "[player] 收听失败 room=$roomId: $msg")
-        releasePlayer()
-        currentRoomId = 0L
+        releaseAndClear()
         paused = true
         notify(roomId, false, msg)
     }
 
+    private fun releaseAndClear() {
+        seq++  // 使所有在途操作失效
+        releasePlayer()
+        currentRoomId = 0L
+    }
+
+    /** 播放/暂停切换(前端控制器点击) */
     fun toggle() {
         val p = player
         if (p != null && p.playWhenReady) {
             Logger.i("Listen", "[player] 点击暂停")
-            try { p.release() } catch (_: Exception) {}
-            player = null
-            paused = true
-            val rid = currentRoomId
+            seq++
+            releasePlayer()
             currentRoomId = 0L
-            notify(rid, false, "已暂停")
+            paused = true
+            notify(0L, false, "已暂停")
         } else {
             paused = false
             val rid = currentRoomId
@@ -181,11 +198,11 @@ object ListenPlayer {
         }
     }
 
+    /** 停止收听(彻底停止,在途取流作废) */
     fun stop() {
         Logger.i("Listen", "[player] 停止收听")
         val rid = currentRoomId
-        releasePlayer()
-        currentRoomId = 0L
+        releaseAndClear()
         paused = false
         if (rid != 0L) notify(rid, false, "已停止收听")
     }
