@@ -91,12 +91,18 @@ class ListenService : Service() {
     private var player: ExoPlayer? = null
     private var reconnectCount = 0
     private var paused = false
+    private var mediaSession: android.media.session.MediaSession? = null
 
     override fun onBind(intent: Intent?): IBinder? = null
 
     override fun onCreate() {
         super.onCreate()
+        Logger.i("Listen", "[service] onCreate")
         createChannel()
+        // Android 14+ mediaPlayback 前台服务要求活跃 MediaSession,否则 startForeground 会被拒/崩溃
+        try {
+            mediaSession = android.media.session.MediaSession(applicationContext, "DDTV Listen").apply { setActive(true) }
+        } catch (e: Exception) { Logger.w("Listen", "MediaSession 创建失败: ${e.message}") }
     }
 
     private fun createChannel() {
@@ -110,6 +116,7 @@ class ListenService : Service() {
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        Logger.i("Listen", "[service] onStartCommand action=${intent?.action} startId=$startId")
         when (intent?.action) {
             ACTION_START -> handleStart(intent.getLongExtra(EXTRA_ROOM_ID, 0L))
             ACTION_TOGGLE -> togglePause()
@@ -314,7 +321,10 @@ class ListenService : Service() {
     }
 
     override fun onDestroy() {
+        Logger.i("Listen", "[service] onDestroy")
         try { player?.release() } catch (_: Exception) {}
+        try { mediaSession?.release() } catch (_: Exception) {}
+        mediaSession = null
         player = null
         playing = false
         super.onDestroy()
