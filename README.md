@@ -70,6 +70,36 @@ B 站直播自动录制工具 —— 按原版 [CHKZL/DDTV](https://github.com/C
 - **搜索 UP 出现一堆代码/头像不显示**:已修复——B站搜索结果的 HTML 高亮标签会在入库前清理,头像地址兼容协议相对写法;请更新到最新版
 - **桌面图标没更新**:卸载旧版或重装后图标缓存需刷新(移除图标重新添加)
 
+## 环境搭建
+
+**依赖（构建机）**
+
+| 项 | 要求 | 说明 |
+|---|---|---|
+| JDK | 17（最低 11） | `java -version` 确认；JVM target 11 |
+| Android SDK | platform 33 + build-tools 34.0.0 | 在 `local.properties` 写 `sdk.dir`，如 `sdk.dir=/opt/android-sdk` |
+| Gradle | 无需单独装 | 用项目自带 wrapper `./gradlew` |
+| FFmpeg-kit AAR | 已内置 | `app/libs/ffmpeg-kit-full-v{6,8,9}.aar`，勿删；构建参数 `-PffmpegVersion=6|8|9` 选择 |
+| 签名 keystore | 已内置 | `bbdown-release.keystore`（口令见 `app/build.gradle`，仅供开发分发，正式上架请替换） |
+| NDK | 不需要 | ffmpeg 以预编译 AAR 提供，无需本地 NDK 编译 |
+
+**首次构建**
+
+```bash
+# 1. 填写 Android SDK 路径(如已存在 local.properties 可跳过)
+echo "sdk.dir=/opt/android-sdk" > local.properties
+
+# 2. 构建 release(默认 ffmpeg-9)
+./build-apk.sh 9 release
+
+# 或一次构建三版本(ffmpeg-6/8/9)
+./build-apk.sh all release
+```
+
+> `build-apk.sh` 自动做 AAR zip 条目路径修复、产物 native 库自检与 apksigner 签名校验；
+> 仅编译 Kotlin 验证可 `./gradlew :app:compileDebugKotlin -PffmpegVersion=9`。
+> Linux(WSL)/macOS 直接运行；Windows 用 `gradle` 或 Git Bash 适配。
+
 ## 构建
 
 ```bash

@@ -110,6 +110,15 @@ recordLoop(外层, 取流→选线路→分段)
 
 ## 构建与发布
 
+### 环境准备
+
+- **JDK 17**(编译 target 11);仅做 Kotlin 语法验证可 `./gradlew :app:compileDebugKotlin -PffmpegVersion=9`
+- **Android SDK**:`local.properties` 写 `sdk.dir`(如 `/opt/android-sdk`);需 platform 33 + build-tools 34.0.0
+- **Gradle**:用项目自带 wrapper(7.6.3),无需单独安装;AGP 7.4.2 / Kotlin 1.8.22
+- **无需 NDK**:ffmpeg 以预编译 AAR 提供,不涉及本地 native 编译
+- **签名**:仓库内置 `bbdown-release.keystore`(口令见 `app/build.gradle`,仅开发分发用)
+- AAR 来自 xialiag/ffmpeg-kit 同源构建链,`app/libs/` 三版本并存
+
 ### 构建
 
 ```bash
