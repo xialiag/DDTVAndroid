@@ -672,6 +672,8 @@ object LiveRecorder {
                             fos.write(buf, 0, read)
                             bytesForThisSegment += read
                             stopWatch.add(read)
+                            // 边录边播：有本地收听(在线听直播)时把同块数据推给本地流代理，不再单独 B 站取流
+                            if (LiveStreamProxy.isActive(roomId)) LiveStreamProxy.push(roomId, buf, 0, read)
                             card.recSize += read
                             card.recSpeed = stopWatch.speed()
                             notifyProgress(roomId, card.recSize, card.recSpeed)

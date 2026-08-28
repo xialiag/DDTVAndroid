@@ -498,7 +498,7 @@ class DDTVBridge(private val context: Context, private val webView: WebView) {
 
     // ============ 自动更新（GitHub Releases，参照原版 ProgramUpdates） ============
 
-    private val currentVersion: String = "0.7.37"
+    private val currentVersion: String = "0.7.38"
 
     /** 解析 "v0.7.0" / "0.7.0-beta1" 为可比较数字段列表 */
     private fun versionParts(v: String): List<Long> {
@@ -1238,6 +1238,28 @@ class DDTVBridge(private val context: Context, private val webView: WebView) {
             com.ddtv.app.core.DanmakuExport.exportForVideo(path, format)
         } catch (e: Exception) {
             """{"code":-1,"msg":"生成字幕失败: ${e.message}"}"""
+        }
+    }
+
+    /** 扫描录制目录下所有 FLV，ffmpeg 校验损坏的自动加入修复队列（工具页"自动修复"用） */
+    @JavascriptInterface
+    fun scanAndRepairFlv(): String {
+        return try {
+            val dir = com.ddtv.app.core.RoomManager.outputDir
+            val flvs = ArrayList<java.io.File>()
+            dir.walkTopDown()
+                .filter { it.isFile && it.extension.equals("flv", true) && !com.ddtv.app.core.LiveRecorder.isFileBeingRecorded(it.absolutePath) }
+                .forEach { flvs.add(it) }
+            var broken = 0
+            val toRepair = ArrayList<String>()
+            flvs.forEach { f ->
+                if (!com.ddtv.app.core.FFmpegRepair.isPlayable(f.absolutePath)) { broken++; toRepair.add(f.absolutePath) }
+            }
+            toRepair.forEach { com.ddtv.app.core.RepairTaskManager.submit(it, "remux") }
+            com.ddtv.app.core.Logger.i("Bridge", "扫描 FLV ${flvs.size} 个，损坏 ${broken} 个，已加入修复队列")
+            """{"code":1,"msg":"扫描到 ${flvs.size} 个 FLV，损坏 ${broken} 个，已加入修复队列","total":${flvs.size},"broken":$broken}"""
+        } catch (e: Exception) {
+            """{"code":-1,"msg":"扫描失败: ${e.message}"}"""
         }
     }
 

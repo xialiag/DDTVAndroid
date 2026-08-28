@@ -1,4 +1,4 @@
-/* ===== DDTV Android — UI 逻辑 v0.7.37 =====
+/* ===== DDTV Android — UI 逻辑 v0.7.38 =====
    结构:工具 → 图标 → 状态 → 主题 → 弹层 → 布局 → 各视图渲染 → 原生回调 → 操作 → 初始化
    模板规则:禁止内联样式(动态数据除外),一律用 app.css 里的类;图标用 ic() */
 'use strict';
@@ -1056,13 +1056,15 @@ function renderToolsPanel() {
       <button class="btn btn-sec" onclick="submitRepair('transcode')">${ic('film',14)} 完整转码</button>
       <button class="btn btn-sec" onclick="exportDanmakuSrt('srt')">${ic('save',14)} 导出字幕(.srt)</button>
       <button class="btn btn-sec" onclick="exportDanmakuSrt('ass')">${ic('save',14)} 导出字幕(.ass)</button>
-      <button class="btn btn-sec" onclick="exportDanmakuSrt('assdm')">${ic('save',14)} 导出弹幕(.ass)</button></div>
+      <button class="btn btn-sec" onclick="exportDanmakuSrt('assdm')">${ic('save',14)} 导出弹幕(.ass)</button>
+      <button class="btn btn-sec" onclick="scanRepairFlv()">${ic('wrench',14)} 扫描并修复损坏FLV</button></div>
     <div class="note">
       · 快速转封装：flv→mp4，-c copy 不重编码，最快<br>
       · 修复损坏：忽略错误重封装，处理录制中断的文件<br>
       · 完整转码：H.264 重编码,修复时间轴/编码问题，较慢<br>
       · 音频文件(m4a)同样可修复损坏（-c copy 重封装/重编码兜底）<br>
       · 导出字幕：按录像起点对齐同目录弹幕，生成 .srt / .ass 字幕 或 .ass 弹幕(滚动)，可被播放器/剪辑加载<br>
+      · 扫描并修复损坏FLV：自动检测录制目录里无法解析的 FLV 并加入修复队列<br>
       · 任务按顺序排队执行，可取消/重试/删除</div>
     <h2>任务列表</h2>
     <div class="repair-tasks" id="repairTasks"><div class="sb-empty">暂无任务</div></div>
@@ -1092,6 +1094,12 @@ function submitRepair(mode) {
   if(r.code<0){ toast(r.msg,'err'); return; }
   toast('已加入队列: '+REPAIR_MODE_LABEL[mode],'ok');
   refreshRepairTasks();
+}
+function scanRepairFlv() {
+  try {
+    const r = JSON.parse(AndroidBridge.scanAndRepairFlv());
+    toast(r.msg, r.code<0?'err':'ok');
+  } catch(e) { toast('扫描失败：'+e,'err'); }
 }
 function exportDanmakuSrt(fmt) {
   if(!_toolPath) { toast('请先选择录像文件','warn'); return; }
