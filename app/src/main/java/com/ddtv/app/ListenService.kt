@@ -250,6 +250,16 @@ class ListenService : Service() {
                 prepare()
                 playWhenReady = true
             }
+            // 边录边播(本地代理流)12s 未进入 READY(数据不足/解析异常) → 强制回退网络取流，避免无限缓冲
+            if (usingLocal) {
+                mainHandler.postDelayed({
+                    if (p.playbackState != Player.STATE_READY) {
+                        Logger.w("Listen", "本地(边录边播)流 12s 未就绪，回退网络取流")
+                        forceNetwork = true
+                        handleStart(currentRoomId)
+                    }
+                }, 12000)
+            }
             player = p
         } catch (e: Exception) {
             Logger.e("Listen", "播放器构建失败: ${e.message}")
