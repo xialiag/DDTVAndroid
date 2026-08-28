@@ -92,6 +92,8 @@ class ListenService : Service() {
     private var player: ExoPlayer? = null
     private var reconnectCount = 0
     private var paused = false
+    @Volatile private var usingLocal = false   // 当前是否走边录边播本地代理流
+    @Volatile private var forceNetwork = false // 本地流出错后强制回退网络取流
 
     override fun onBind(intent: Intent?): IBinder? = null
 
@@ -142,14 +144,18 @@ class ListenService : Service() {
         // 跟随房间清晰度设置（RoomCard.quality，默认原画）
         val qn = RoomManager.getRoom(roomId)?.quality ?: 150
 
-        // 边录边播：该房间正在录制 → 直接用本地流代理(录制流已读到的字节)，不再单独 B 站取流，避免并发取流 403/无反应
-        if (LiveRecorder.isRecordingRoom(roomId)) {
+        // 边录边播：该房间正在录制且本地流未出过错 → 直接用本地流代理(录制流已读到的字节)，
+        // 不再单独 B 站取流，避免并发取流 403/无反应；本地流出错(forceNetwork)时回退网络取流
+        if (LiveRecorder.isRecordingRoom(roomId) && !forceNetwork) {
             LiveStreamProxy.ensureServer()
+            usingLocal = true
             val url = "http://127.0.0.1:${LiveStreamProxy.PORT}/live?room=$roomId&t=${System.currentTimeMillis()}"
             Logger.i("Listen", "room=$roomId 边录边播(本地代理流): $url")
             mainHandler.post { prepareAndPlay(roomId, url, false) }
             return
         }
+        usingLocal = false
+        forceNetwork = false
 
         // 取流（网络）在子线程，完成后主线程构建播放器
         Thread({
@@ -224,8 +230,10 @@ class ListenService : Service() {
                         Logger.e("Listen", "播放错误: $detail")
                         if (reconnectCount < 2) {
                             reconnectCount++
-                            Logger.w("Listen", "第 $reconnectCount/2 次重连…")
+                            Logger.w("Listen", "第 $reconnectCount/2 次重连…(${if (usingLocal) "回退网络" else "重试"})")
                             notify(roomId, false, "播放出错，尝试重连…")
+                            // 边录边播(本地代理流)出错 → 强制回退网络取流，避免本地流反复失败
+                            if (usingLocal) forceNetwork = true
                             mainHandler.postDelayed({ handleStart(roomId) }, reconnectCount * 3000L)
                         } else {
                             finishError(roomId, "播放出错（$detail）".take(64))
@@ -233,7 +241,8 @@ class ListenService : Service() {
                     }
                     override fun onIsPlayingChanged(p: Boolean) {
                         playing = p
-                        notify(roomId, p, if (p) "正在收听" else "已暂停")
+                        // 缓冲/等待数据时 onIsPlayingChanged(false) 会触发，显示"缓冲中…"而非误导的"已暂停"
+                        notify(roomId, p, if (p) "正在收听" else "缓冲中…")
                         updateNotification(roomId, p)
                     }
                 })
