@@ -1,4 +1,4 @@
-/* ===== DDTV Android — UI 逻辑 v0.7.27 =====
+/* ===== DDTV Android — UI 逻辑 v0.7.28 =====
    结构:工具 → 图标 → 状态 → 主题 → 弹层 → 布局 → 各视图渲染 → 原生回调 → 操作 → 初始化
    模板规则:禁止内联样式(动态数据除外),一律用 app.css 里的类;图标用 ic() */
 'use strict';
@@ -1041,13 +1041,14 @@ function renderToolsPanel() {
       <button class="btn btn-sec" onclick="submitRepair('remux')">${ic('bolt',14)} 快速转封装</button>
       <button class="btn btn-sec" onclick="submitRepair('repair')">${ic('wrench',14)} 修复损坏</button>
       <button class="btn btn-sec" onclick="submitRepair('transcode')">${ic('film',14)} 完整转码</button>
-      <button class="btn btn-sec" onclick="exportDanmakuSrt()">${ic('save',14)} 导出字幕(.srt)</button></div>
+      <button class="btn btn-sec" onclick="exportDanmakuSrt('srt')">${ic('save',14)} 导出字幕(.srt)</button>
+      <button class="btn btn-sec" onclick="exportDanmakuSrt('ass')">${ic('save',14)} 导出字幕(.ass)</button></div>
     <div class="note">
       · 快速转封装：flv→mp4，-c copy 不重编码，最快<br>
       · 修复损坏：忽略错误重封装，处理录制中断的文件<br>
       · 完整转码：H.264 重编码,修复时间轴/编码问题，较慢<br>
       · 音频文件(m4a)同样可修复损坏（-c copy 重封装/重编码兜底）<br>
-      · 导出字幕(.srt)：按录像起点对齐同目录弹幕，生成可被播放器加载的字幕<br>
+      · 导出字幕：按录像起点对齐同目录弹幕，生成 .srt / .ass 字幕，可被播放器/剪辑加载<br>
       · 任务按顺序排队执行，可取消/重试/删除</div>
     <h2>任务列表</h2>
     <div class="repair-tasks" id="repairTasks"><div class="sb-empty">暂无任务</div></div>
@@ -1078,12 +1079,13 @@ function submitRepair(mode) {
   toast('已加入队列: '+REPAIR_MODE_LABEL[mode],'ok');
   refreshRepairTasks();
 }
-function exportDanmakuSrt() {
+function exportDanmakuSrt(fmt) {
   if(!_toolPath) { toast('请先选择录像文件','warn'); return; }
+  const f=fmt||'srt';
   try {
-    const r=JSON.parse(AndroidBridge.exportDanmakuSrt(_toolPath));
+    const r=JSON.parse(AndroidBridge.exportDanmakuSrt(_toolPath,f));
     if(r.code<0){ toast(r.msg,'err'); return; }
-    showModal({ title:'字幕已生成', msg:r.path+'\n\n共 '+r.count+' 条弹幕，已存为 .srt 字幕(与录像同名)',
+    showModal({ title:'字幕已生成 ('+((r.format||f).toUpperCase())+')', msg:r.path+'\n\n共 '+r.count+' 条弹幕，已存为字幕(与录像同名)',
       okText:'分享', cancelText:'关闭',
       onOk: () => { try { const s=JSON.parse(AndroidBridge.shareLogFile(r.path)); toast(s.msg, s.code<0?'err':'ok'); } catch(e2){ toast('分享失败：'+e2,'err'); } } });
   } catch(e) { toast('生成字幕失败：'+e,'err'); }
@@ -1384,8 +1386,10 @@ function renderSettings() {
       <input type="number" id="setSplitG" class="sw-input-num" min="0" max="100" value="0" onchange="saveSettings()"></div>
     <div class="switch-row"><div class="sw-text"><div class="sw-label">自动转封装 MP4</div><div class="sw-desc">结束后自动 ffmpeg 转封装</div></div>
       <label class="switch"><input type="checkbox" id="setRemux" onchange="saveSettings()"><span class="slider"></span></label></div>
-    <div class="switch-row"><div class="sw-text"><div class="sw-label">结束后自动生成字幕</div><div class="sw-desc">录制结束把弹幕/礼物/SC 转成 .srt 字幕(与弹幕 json 同名)</div></div>
+    <div class="switch-row"><div class="sw-text"><div class="sw-label">结束后自动生成字幕</div><div class="sw-desc">录制结束把弹幕/礼物/SC 转成字幕(与弹幕 json 同名)</div></div>
       <label class="switch"><input type="checkbox" id="setDanmakuSrt" onchange="saveSettings()"><span class="slider"></span></label></div>
+    <div class="switch-row"><div class="sw-text"><div class="sw-label">字幕格式</div><div class="sw-desc">SRT 通用兼容;ASS 带样式/颜色,弹幕居中叠加更接近原味</div></div>
+      <div class="sw-right"><div id="setSubFormat"></div></div></div>
     <div class="switch-row"><div class="sw-text"><div class="sw-label">修复后删除源文件</div><div class="sw-desc">修复/转码成功后删除原始文件</div></div>
       <label class="switch"><input type="checkbox" id="setRepDel" onchange="saveSettings()"><span class="slider"></span></label></div>
     <h2>账号</h2>
@@ -1442,6 +1446,9 @@ function renderSettings() {
   renderCSelect($('#setMode'),
     [{v:'flv',label:'FLV 直录'},{v:'hls',label:'HLS'},{v:'auto',label:'自动（有 HLS 用 HLS）'}],
     String(s?s.recordMode||'flv':'flv'), ()=>saveSettings());
+  renderCSelect($('#setSubFormat'),
+    [{v:'srt',label:'SRT 字幕'},{v:'ass',label:'ASS 字幕'}],
+    String(s?s.danmakuSubFormat||'srt':'srt'), ()=>saveSettings());
   if(s) { $('#setAuto').checked=s.autoRecord;
     $('#setAppend').checked=s.flvAppendOnReconnect!==false;
     $('#setSplitTitle').checked=s.splitByTitle; $('#setSplitH').value=s.splitSeconds?Math.round(s.splitSeconds/3600):0;
@@ -1466,7 +1473,8 @@ function saveSettings() {
     debugServer:$('#setDebug').checked,
     keepScreenOn:$('#setKeepScreen').checked,
     autoStart:$('#setAutoStart').checked,
-    danmakuSrt:$('#setDanmakuSrt').checked};
+    danmakuSrt:$('#setDanmakuSrt').checked,
+    danmakuSubFormat:$('#setSubFormat').dataset.value||'srt'};
   const r=JSON.parse(AndroidBridge.setSettings(JSON.stringify(s)));
   toast(r.msg, r.code<0?'err':'ok'); if(r.code>0){state.settings=s;updateStatusbar();}
 }

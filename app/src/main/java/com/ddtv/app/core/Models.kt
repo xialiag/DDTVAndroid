@@ -32,7 +32,8 @@ data class AppSettings(
     var updateRepo: String = "xialiag/DDTVAndroid",  // 自动更新源 GitHub owner/repo(空=不检查)
     var autoUpdate: Boolean = false,      // 启动时静默检查更新
     var autoStart: Boolean = true,       // 开机自启:重启后自动恢复直播监控前台服务
-    var danmakuSrt: Boolean = false,     // 录制结束后自动生成弹幕字幕(.srt)
+    var danmakuSrt: Boolean = false,     // 录制结束后自动生成弹幕字幕
+    var danmakuSubFormat: String = "srt",  // 结束自动字幕格式: srt|ass
 ) {
     fun toJson(): JSONObject = JSONObject().apply {
         put("pollInterval", pollInterval)
@@ -57,6 +58,7 @@ data class AppSettings(
         put("autoUpdate", autoUpdate)
         put("autoStart", autoStart)
         put("danmakuSrt", danmakuSrt)
+        put("danmakuSubFormat", danmakuSubFormat)
     }
 }
 
