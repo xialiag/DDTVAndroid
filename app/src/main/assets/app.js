@@ -1,4 +1,4 @@
-/* ===== DDTV Android — UI 逻辑 v0.7.24 =====
+/* ===== DDTV Android — UI 逻辑 v0.7.25 =====
    结构:工具 → 图标 → 状态 → 主题 → 弹层 → 布局 → 各视图渲染 → 原生回调 → 操作 → 初始化
    模板规则:禁止内联样式(动态数据除外),一律用 app.css 里的类;图标用 ic() */
 'use strict';
@@ -534,9 +534,11 @@ function renderEditor() {
   } else if (v === 'account') { tabs.innerHTML = '<div class="tab active">账号管理</div>'; renderAccount(); }
   else if (v === 'settings') { tabs.innerHTML = '<div class="tab active">设置</div>'; renderSettings();
   } else if (v === 'log') { tabs.innerHTML = '<div class="tab active">运行日志</div>' +
-      `<button class="btn btn-sec btn-sm" style="margin-left:auto;margin-right:8px;align-self:center" onclick="saveLogsToFile()">${ic('save',12)} 保存到文件</button>`;
+      `<button class="btn btn-sec btn-sm" style="margin-right:8px;align-self:center" onclick="renderLogFiles()">${ic('clock',12)} 历史文件</button>
+       <button class="btn btn-sec btn-sm" style="margin-right:8px;align-self:center" onclick="renderCrashLogs()">${ic('alert',12)} 崩溃日志</button>
+       <button class="btn btn-sec btn-sm" style="margin-left:auto;margin-right:8px;align-self:center" onclick="saveLogsToFile()">${ic('save',12)} 保存到文件</button>`;
     body.innerHTML = `<div class="log-toolbar">
-      <span class="toolbar-text">运行日志（自动落盘保留7天，崩溃日志在设置-调试中查看）</span></div>
+      <span class="toolbar-text">运行日志（自动落盘保留7天；历史文件/崩溃日志点上方按钮）</span></div>
       <div class="log-panel" id="logPanel"></div>`;
     loadLogs();
   }
@@ -1608,6 +1610,60 @@ function deleteCrashLog(name) {
 function clearCrashLogs() {
   try { const r = JSON.parse(AndroidBridge.clearCrashLogs()); toast(r.msg, r.code<0?'err':'ok'); renderCrashLogs(); }
   catch(e) {}
+}
+
+/* ========== 历史日志文件（App 内管理：列出/查看/分享/删除按天日志） ========== */
+function renderLogFiles() {
+  const body = $('#editorBody');
+  subHeader('历史日志文件', "renderEditor()");
+  body.innerHTML = `<div class="log-toolbar">
+      <span class="toolbar-text">按天自动落盘的日志文件（保留7天，点击可查看，可分享/删除）</span>
+      <button class="btn btn-sec btn-sm" onclick="renderLogFiles()" style="margin-left:auto">${ic('refresh',12)} 刷新</button></div>
+    <div class="log-panel" id="logFilePanel"><div class="loading-pulse">${spinIcon()} 加载中…</div></div>`;
+  try {
+    const files = JSON.parse(AndroidBridge.getLogFiles());
+    const panel = $('#logFilePanel');
+    if (!files || !files.length) {
+      panel.innerHTML = '<div class="detail-empty"><div class="empty-hint-title">暂无历史日志文件</div>' +
+        '<div class="empty-hint-sub">每天产生的日志会自动保存到“日志”目录</div></div>';
+      return;
+    }
+    panel.innerHTML = files.map(l => {
+      const d = new Date(l.time), ts = fmtDate(l.time)+' '+('0'+d.getHours()).slice(-2)+':'+('0'+d.getMinutes()).slice(-2);
+      return `<div class="crash-item" onclick="viewLogFile('${esc(l.filename)}')">
+        <div class="crash-head">
+          <span class="crash-name">${esc(l.filename)}</span>
+          <span class="crash-meta">${ts} · ${(l.size/1024).toFixed(1)}KB · 点击查看</span>
+          <button class="btn btn-sec btn-sm" onclick="event.stopPropagation();shareLogFile('${esc(l.path)}')">${ic('share',12)} 分享</button>
+          <button class="btn btn-danger-sec btn-sm" onclick="event.stopPropagation();deleteLogFile('${esc(l.filename)}')">${ic('trash',12)} 删除</button>
+        </div>
+      </div>`;
+    }).join('');
+  } catch(e) {
+    $('#logFilePanel').innerHTML = '<div class="detail-empty"><div class="empty-hint-title">加载失败</div>' +
+      '<div class="empty-hint-sub">'+esc(e.message||e)+'</div></div>';
+  }
+}
+function viewLogFile(filename) {
+  try {
+    const r = JSON.parse(AndroidBridge.readLogFile(filename));
+    if (r.code < 0) { toast(r.msg||'读取失败','err'); return; }
+    const lines = r.content.split('\n').length;
+    showModal({ title: r.filename+'（'+lines+' 行）', msg: (r.content||'(空)').slice(0,4000),
+      okText:'分享', cancelText:'关闭',
+      onOk: () => { try { const s=JSON.parse(AndroidBridge.shareLogFile(r.path)); toast(s.msg, s.code<0?'err':'ok'); } catch(e2){ toast('分享失败：'+e2,'err'); } } });
+  } catch(e) { toast('查看失败：'+e,'err'); }
+}
+function shareLogFile(path) {
+  try { const r = JSON.parse(AndroidBridge.shareLogFile(path)); toast(r.msg, r.code<0?'err':'ok'); }
+  catch(e) { toast('分享失败：'+e,'err'); }
+}
+function deleteLogFile(name) {
+  try {
+    const r = JSON.parse(AndroidBridge.deleteLogFile(name));
+    toast(r.msg, r.code<0?'err':'ok');
+    if (r.code > 0) renderLogFiles();
+  } catch(e) { toast('删除失败：'+e,'err'); }
 }
 
 /* ========== 状态栏 ========== */
