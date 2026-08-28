@@ -753,6 +753,7 @@ object RoomManager {
                 // 弹幕缓冲上限：长直播早期礼物/上舰/SC 易被逐出，提升到 2000 保内容完整
                 while (buf.size > 2000) buf.removeAt(0)
             }
+            appendLiveDanmaku(item)  // 实时流水:每条立即落盘,App 被杀也不丢
             notifyDanmaku(item)
         }
     }
@@ -775,13 +776,96 @@ object RoomManager {
     fun getDanmakuStatus(roomId: Long): Pair<Boolean, String> = danmakuStatus[roomId] ?: (false to "未连接")
     /** 最近弹幕缓冲（供 UI 拉取） */
     val danmakuBuffer = ConcurrentHashMap<Long, MutableList<DanmakuItem>>()
+    /** 实时弹幕流水文件(roomId → 当天 danmu_<HH-mm-ss>.jsonl):每条弹幕/礼物即时追加,防 buffer 丢失 */
+    private val liveDanmakuFiles = ConcurrentHashMap<Long, java.io.File>()
+
+    /** 弹幕/礼物到达即追加写实时流水(每行一条 JSON);写入失败静默不影响主流程 */
+    fun appendLiveDanmaku(item: DanmakuItem) {
+        try {
+            val f = liveDanmakuFiles.getOrPut(item.roomId) {
+                val card = rooms[item.roomId]
+                val dir = java.io.File(outputDir, sanitizeFileName(card?.dirName() ?: "房间 ${item.roomId}") +
+                    java.io.File.separator + java.text.SimpleDateFormat("yyyy-MM-dd", java.util.Locale.CHINA).format(java.util.Date()))
+                dir.mkdirs()
+                val stamp = java.text.SimpleDateFormat("HH-mm-ss", java.util.Locale.CHINA).format(java.util.Date())
+                java.io.File(dir, "danmu_$stamp.jsonl")
+            }
+            val line = org.json.JSONObject().apply {
+                put("roomId", item.roomId)
+                put("time", item.time); put("type", item.type); put("user", item.user); put("uid", item.uid)
+                put("content", item.content); put("color", item.color); put("extra", item.extra)
+            }.toString()
+            f.appendText(line + "\n")
+        } catch (_: Exception) {}
+    }
+
+    /** 读实时流水文件,还原弹幕条目 */
+    private fun readJsonlDanmaku(f: java.io.File): List<DanmakuItem> {
+        val out = mutableListOf<DanmakuItem>()
+        try {
+            f.forEachLine { line ->
+                if (line.isBlank()) return@forEachLine
+                try {
+                    val o = org.json.JSONObject(line)
+                    out.add(DanmakuItem(
+                        roomId = o.optLong("roomId", 0),
+                        type = o.optString("type", "DANMU_MSG"),
+                        user = o.optString("user", ""),
+                        uid = o.optLong("uid", 0),
+                        content = o.optString("content", ""),
+                        time = o.optLong("time", System.currentTimeMillis()),
+                        color = o.optInt("color", 0),
+                        extra = o.optString("extra", ""),
+                    ))
+                } catch (_: Exception) {}
+            }
+        } catch (_: Exception) {}
+        return out
+    }
+
+    /**
+     * 启动补弹幕存档:异常退出(被杀/崩溃)残留的 danmu_*.jsonl(实时流水)无对应 .json,
+     * 读回生成正式 json 存档(保留原始流水数据)。
+     */
+    fun recoverDanmakuJsonl() {
+        Thread({
+            try {
+                var n = 0
+                outputDir.walkTopDown().forEach { f ->
+                    if (!f.isFile || !f.name.endsWith(".jsonl")) return@forEach
+                    val json = java.io.File(f.absolutePath.removeSuffix(".jsonl") + ".json")
+                    if (json.exists()) { return@forEach }
+                    val items = readJsonlDanmaku(f)
+                    if (items.isEmpty()) { try { f.delete() } catch (_: Exception) {}; return@forEach }
+                    val arr = org.json.JSONArray()
+                    items.forEach { it ->
+                        arr.put(org.json.JSONObject().apply {
+                            put("time", it.time); put("type", it.type); put("user", it.user); put("uid", it.uid)
+                            put("content", it.content); put("color", it.color); put("extra", it.extra)
+                        })
+                    }
+                    val roomId = items.first().roomId
+                    val card = rooms[roomId]
+                    json.writeText("""{"roomId":$roomId,"name":"${card?.name ?: "房间 $roomId"}","count":${items.size},"items":${arr.toString(2)}}""")
+                    try { f.delete() } catch (_: Exception) {}
+                    n++
+                }
+                if (n > 0) Logger.i("Room", "启动补弹幕存档: $n 个(异常退出残留)")
+            } catch (_: Exception) {}
+        }, "DanmakuRecover").apply { isDaemon = true; start() }
+    }
 
     /**
      * 保存弹幕存档（对应原版 DDTV Danmu.SaveDanmu）
      * 写入 {输出目录}/{主播}/{日期}/danmu_{HH-mm-ss}.json
      */
     fun saveDanmakuFile(card: RoomCard) {
-        val items = danmakuBuffer[card.roomId] ?: return
+        // 数据源优先实时流水(异常退出后 buffer 可能丢失/不全,jsonl 有全量);
+        // 流水条数 >= 内存缓冲时才以流水为准(正常情况两者一致)
+        val buffered = danmakuBuffer[card.roomId]
+        val liveF = liveDanmakuFiles[card.roomId]
+        val fromFile = if (liveF != null && liveF.exists()) readJsonlDanmaku(liveF) else emptyList()
+        val items: List<DanmakuItem> = if (fromFile.size >= (buffered?.size ?: 0)) fromFile else (buffered ?: emptyList())
         if (items.isEmpty()) return
         try {
             val dir = java.io.File(outputDir, sanitizeFileName(card.dirName()) +
@@ -836,6 +920,9 @@ object RoomManager {
             }
             Logger.i("Room", "[${card.name}] 弹幕存档: ${files.joinToString()} (弹幕${items.count { it.type == "DANMU_MSG" }}条/礼物${gifts.size}个/上舰${guards.size}次/SC${scs.size}条)")
             notifyLog(card.roomId, "info", "弹幕存档: ${files.joinToString()}")
+            // 实时流水已并入正式存档,清理;异常退出未走此分支的 jsonl 由启动补档兜底
+            try { liveF?.delete() } catch (_: Exception) {}
+            liveDanmakuFiles.remove(card.roomId)
         } catch (e: Exception) {
             Logger.w("Room", "弹幕存档失败: ${e.message}")
         }
