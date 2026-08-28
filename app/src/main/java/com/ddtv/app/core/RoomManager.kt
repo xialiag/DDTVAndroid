@@ -510,6 +510,7 @@ object RoomManager {
             notifyLog(card.roomId, "info", "直播结束")
             card.liveStatusPrev = false
             stopRecording(card)
+            stopDanmaku(card.roomId)  // 下播即断开弹幕，避免对已下播房间持续重连/显示"连接中"
             saveDanmakuFile(card)
             notifyLiveEnd(card.roomId)
         }

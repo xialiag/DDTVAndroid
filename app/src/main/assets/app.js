@@ -1,4 +1,4 @@
-/* ===== DDTV Android — UI 逻辑 v0.7.33 =====
+/* ===== DDTV Android — UI 逻辑 v0.7.34 =====
    结构:工具 → 图标 → 状态 → 主题 → 弹层 → 布局 → 各视图渲染 → 原生回调 → 操作 → 初始化
    模板规则:禁止内联样式(动态数据除外),一律用 app.css 里的类;图标用 ic() */
 'use strict';
@@ -14,7 +14,7 @@ const fmtDate = t => { const d=new Date(t); return d.getFullYear()+'-'+('0'+(d.g
 const qnLabels = { 30000:'杜比',20000:'4K',10000:'原画',400:'蓝光',250:'超清',150:'高清',80:'流畅' };
 
 /** B站图片 URL 统一转 https（WebView 拦截 http 混合内容，参照 BBDownAndroid face.replace(/^http:\/\//,'https://')） */
-const imgUrl = u => (u||'').replace(/^http:\/\//, 'https://');
+const imgUrl = u => (u||'').replace(/^http:\/\//, 'https://').replace(/^\/\//, 'https://');
 /** 头像 HTML：face 为空/加载失败时显示首字头像（粉底白字），不再空白 */
 function avatarHtml(face, name) {
   const ch = esc((name||'?').trim().charAt(0) || '?');
@@ -728,7 +728,8 @@ function updateDmConn(connected, msg) {
   const el = $('#dmConn');
   if (!el) return;
   if (connected) {
-    el.textContent = '已连接';
+    // 显示具体阶段(如"弹幕推送中")而非笼统"已连接"
+    el.textContent = (msg && msg !== '已连接') ? msg : '已连接';
     el.classList.remove('dm-conn-fail');
     el.onclick = null;
   } else if (msg && msg.indexOf('点击重试') >= 0) {

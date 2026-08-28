@@ -35,6 +35,8 @@ UI 采用 **VSCode 风格 + B站粉(#FB7299)** 主题,架构参考 [xialiag/BBDo
 | `WatchHeartbeatManager.cs` + `HmacChain.cs` | `core/WatchHeartbeat.kt`:x25Kn E/X 心跳(链式 HMAC,纯 Kotlin SHA-224) |
 | `Core/Download/Cover.cs` | 每段录制保存封面 cover.jpg |
 | `Core/LogModule/log.cs` | `core/Logger.kt`:内存环形缓冲 + UI 实时推送 |
+| 弹幕转字幕(本项目新增) | `core/DanmakuExport.kt`:弹幕→.srt/.ass/.ass 弹幕(滚动),工具页导出 + 设置「结束后自动生成字幕」开关 |
+| 开机自启保活(本项目新增) | `BootReceiver.kt`:BOOT_COMPLETED 拉起 LiveService,尊重设置 auto_start 开关 |
 
 原版源码在本地 `/root/DDTV-src/DDTV-master/`,接口细节、字段名、业务逻辑对不上时以原版为准。
 
