@@ -67,15 +67,13 @@ class ListenService : Service() {
             Logger.i("Listen", "[bridge] 调用服务启动 room=$roomId (api=${Build.VERSION.SDK_INT})")
             everCreated = false
             try {
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) context.startForegroundService(i)
-                else context.startService(i)
-                Logger.i("Listen", "[bridge] 服务启动调用已发出(无异常)")
+                // 关键修正：用 startService 启动普通服务(前台的 App 允许),再由 handleStart 内部
+                // startForeground 转成前台服务——规避部分系统对 startForegroundService 的**静默拦截**
+                // (拦截不报错,表现为调用正常但服务不创建;已确认 Android13 用户机复现)
+                context.startService(i)
+                Logger.i("Listen", "[bridge] 服务启动调用已发出(startService,无异常)")
             } catch (e: Exception) {
-                // Android 12+ 后台限制：从后台直接拉前台服务可能被拒，回退 startService（仍能播，但无前台通知）
-                Logger.w("Listen", "startForegroundService 失败，回退 startService: ${e.message}")
-                try { context.startService(i) } catch (e2: Exception) {
-                    Logger.e("Listen", "启动听直播服务失败: ${e2.message}")
-                }
+                Logger.e("Listen", "启动听直播服务失败: ${e.message}")
             }
             // 2 秒探针：服务若被系统拦截未创建,给出铁证日志(厂商 ROM/后台限制等情况)
             Thread({
