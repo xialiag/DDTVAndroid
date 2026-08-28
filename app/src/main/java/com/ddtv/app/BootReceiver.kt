@@ -15,6 +15,9 @@ class BootReceiver : BroadcastReceiver() {
         val action = intent.action
         if (action != Intent.ACTION_BOOT_COMPLETED &&
             action != "android.intent.action.QUICKBOOT_POWERON") return
+        // 设置里"开机自启"开关关闭时不拉起（直接读 prefs，冷启动时 RoomManager 尚未 init）
+        val prefs = context.getSharedPreferences("ddtv_settings", Context.MODE_PRIVATE)
+        if (!prefs.getBoolean("auto_start", true)) return
         try {
             Logger.init(context)  // 确保文件日志可用（进程冷启动）
             val i = Intent(context, LiveService::class.java)

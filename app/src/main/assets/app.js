@@ -1,4 +1,4 @@
-/* ===== DDTV Android — UI 逻辑 v0.7.25 =====
+/* ===== DDTV Android — UI 逻辑 v0.7.26 =====
    结构:工具 → 图标 → 状态 → 主题 → 弹层 → 布局 → 各视图渲染 → 原生回调 → 操作 → 初始化
    模板规则:禁止内联样式(动态数据除外),一律用 app.css 里的类;图标用 ic() */
 'use strict';
@@ -1402,8 +1402,13 @@ function renderSettings() {
       <div class="sw-right"><span class="perm-state" id="permBattery">…</span>
       <button class="btn btn-sec btn-sm" onclick="requestPerm('battery')">授权</button></div></div>
     <h2>保活</h2>
+    <div class="switch-row"><div class="sw-text"><div class="sw-label">开机自启</div><div class="sw-desc">手机重启后自动恢复直播监控后台服务</div></div>
+      <label class="switch"><input type="checkbox" id="setAutoStart" onchange="saveSettings()"><span class="slider"></span></label></div>
     <div class="switch-row"><div class="sw-text"><div class="sw-label">屏幕常亮</div><div class="sw-desc">保持屏幕常亮,方便查看录制/弹幕状态</div></div>
       <label class="switch"><input type="checkbox" id="setKeepScreen" onchange="saveSettings()"><span class="slider"></span></label></div>
+    <div class="switch-row"><div class="sw-text"><div class="sw-label">后台保活设置</div><div class="sw-desc">进入系统「应用信息/后台应用管理」界面，允许 DDTV 后台运行、自启动、后台弹出界面，避免被系统杀进程</div></div>
+      <div class="sw-right"><button class="btn btn-sec btn-sm" onclick="openAppBackgroundSettings()">去设置</button></div></div>
+    <div class="switch-row"><div class="sw-text"><div class="sw-label">小锁防杀</div><div class="sw-desc">在「最近任务」里长按 DDTV 卡片 → 点击小锁🔒图标锁定；锁定后系统清理/杀后台时不会杀掉它，配合前台服务可稳定持续录制</div></div>
     <h2>调试</h2>
     <div class="switch-row"><div class="sw-text"><div class="sw-label">调试服务器</div><div class="sw-desc">端口 19864，本机/同一WiFi可查看状态与日志；默认关闭</div></div>
       <label class="switch"><input type="checkbox" id="setDebug" onchange="toggleDebugServer()"><span class="slider"></span></label></div>
@@ -1431,6 +1436,7 @@ function renderSettings() {
     $('#setAutoUpdate').checked=!!s.autoUpdate;
     $('#setDebug').checked=!!s.debugServer;
     $('#setKeepScreen').checked=!!s.keepScreenOn;
+    $('#setAutoStart').checked=!!s.autoStart;
     $('#setOutputDir').value=s.outputDir||''; }
   refreshPermStatus();
 }
@@ -1443,13 +1449,19 @@ function saveSettings() {
     blockBarrage:$('#setBlock').value.trim(),fileNameFormat:$('#setFmt').value.trim(),
     autoUpdate:$('#setAutoUpdate').checked,
     debugServer:$('#setDebug').checked,
-    keepScreenOn:$('#setKeepScreen').checked};
+    keepScreenOn:$('#setKeepScreen').checked,
+    autoStart:$('#setAutoStart').checked};
   const r=JSON.parse(AndroidBridge.setSettings(JSON.stringify(s)));
   toast(r.msg, r.code<0?'err':'ok'); if(r.code>0){state.settings=s;updateStatusbar();}
 }
 
 function pickOutputDir() {
   try { AndroidBridge.pickOutputDir(); } catch(e){ toast('无法打开目录选择器: '+e,'err'); }
+}
+
+function openAppBackgroundSettings() {
+  try { const r = JSON.parse(AndroidBridge.openAppBackgroundSettings()); toast(r.msg, r.code<0?'err':'ok'); }
+  catch(e) { toast('无法打开：'+e,'err'); }
 }
 
 /* ========== 权限（设置页手动授权） ========== */

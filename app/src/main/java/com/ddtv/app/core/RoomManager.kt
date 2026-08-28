@@ -861,6 +861,7 @@ object RoomManager {
             keepScreenOn = prefs.getBoolean("keep_screen_on", false),
             updateRepo = prefs.getString("update_repo", "xialiag/DDTVAndroid")?.takeIf { it.isNotBlank() } ?: "xialiag/DDTVAndroid",
             autoUpdate = prefs.getBoolean("auto_update", true),
+            autoStart = prefs.getBoolean("auto_start", true),
         )
     }
 
@@ -885,6 +886,7 @@ object RoomManager {
             .putBoolean("keep_screen_on", settings.keepScreenOn)
             .putString("update_repo", settings.updateRepo)
             .putBoolean("auto_update", settings.autoUpdate)
+            .putBoolean("auto_start", settings.autoStart)
             .apply()
         LiveRecorder.applySettings(settings)
         // 小心心开关即时生效

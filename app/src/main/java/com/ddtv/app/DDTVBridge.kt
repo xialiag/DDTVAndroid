@@ -439,6 +439,7 @@ class DDTVBridge(private val context: Context, private val webView: WebView) {
             put("keepScreenOn", s.keepScreenOn)
             put("updateRepo", s.updateRepo)
             put("autoUpdate", s.autoUpdate)
+            put("autoStart", s.autoStart)
             put("outputDir", RoomManager.outputDir.absolutePath)
             put("version", com.ddtv.app.BuildConfig.VERSION_NAME)
         }.toString()
@@ -466,6 +467,7 @@ class DDTVBridge(private val context: Context, private val webView: WebView) {
                 keepScreenOn = o.optBoolean("keepScreenOn", keepScreenOn)
                 updateRepo = o.optString("updateRepo", updateRepo)
                 autoUpdate = o.optBoolean("autoUpdate", autoUpdate)
+                autoStart = o.optBoolean("autoStart", autoStart)
             }
             RoomManager.saveSettings()
             com.ddtv.app.core.LiveRecorder.applySettings(RoomManager.settings)
@@ -492,7 +494,7 @@ class DDTVBridge(private val context: Context, private val webView: WebView) {
 
     // ============ 自动更新（GitHub Releases，参照原版 ProgramUpdates） ============
 
-    private val currentVersion: String = "0.7.25"
+    private val currentVersion: String = "0.7.26"
 
     /** 解析 "v0.7.0" / "0.7.0-beta1" 为可比较数字段列表 */
     private fun versionParts(v: String): List<Long> {
@@ -1208,6 +1210,21 @@ class DDTVBridge(private val context: Context, private val webView: WebView) {
                 "storage" -> requestStoragePermission()
             }
         } catch (_: Exception) {}
+    }
+
+    /** 打开系统"应用详情/后台应用管理"界面（引导用户允许 DDTV 后台运行、自启动，防被系统杀进程） */
+    @JavascriptInterface
+    fun openAppBackgroundSettings(): String {
+        return try {
+            val intent = android.content.Intent(
+                android.provider.Settings.ACTION_APPLICATION_DETAILS_SETTINGS,
+                android.net.Uri.parse("package:${context.packageName}")
+            ).apply { addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK) }
+            context.startActivity(intent)
+            """{"code":1,"msg":"已打开系统应用设置"}"""
+        } catch (e: Exception) {
+            """{"code":-1,"msg":"无法打开: ${e.message}"}"""
+        }
     }
 
     /** JS 侧调试日志统一写入运行日志（统一入口，不再散落在页面 DOM） */
