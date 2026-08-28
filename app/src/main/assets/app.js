@@ -1,4 +1,4 @@
-/* ===== DDTV Android — UI 逻辑 v0.7.35 =====
+/* ===== DDTV Android — UI 逻辑 v0.7.36 =====
    结构:工具 → 图标 → 状态 → 主题 → 弹层 → 布局 → 各视图渲染 → 原生回调 → 操作 → 初始化
    模板规则:禁止内联样式(动态数据除外),一律用 app.css 里的类;图标用 ic() */
 'use strict';
@@ -497,6 +497,8 @@ function renderSidebar() {
 /* ========== 编辑器（两级导航：列表页 → 点击卡片 → 详情页，带返回） ========== */
 const IS_NARROW = () => window.innerWidth <= 991;
 function renderEditor() {
+  // 活动栏高亮始终与 state.view 同步(部分二级页不经 switchView,仍要匹配)
+  document.querySelectorAll('.ab-btn').forEach(b => b.classList.toggle('active', b.dataset.view === state.view));
   const body = $('#editorBody'), tabs = $('#tabs'), v = state.view;
   _subnavKey = '';  // 主视图重置二级页返回头状态
   if (v === 'explorer') {
@@ -710,7 +712,7 @@ function renderDanmakuPanel() {
       <span class="dm-conn" id="dmConn">连接中…</span>
       <span class="spacer"></span>
       <button class="btn btn-sec btn-sm" onclick="clearDanmaku()">清空</button></div>
-    <div class="dm-stream" id="dmStream"><div class="dm-empty">连接弹幕中…</div></div>
+    <div class="dm-stream" id="dmStream"><div class="dm-empty">正在获取弹幕状态…</div></div>
     <div class="dm-input-row">
       <input id="dmInput" placeholder="${state.account&&state.account.logged?'发送弹幕…':'登录后可发送'}" ${state.account&&state.account.logged?'':'disabled'}>
       <button class="btn btn-primary btn-sm" onclick="sendDm()" ${state.account&&state.account.logged?'':'disabled'}>${ic('send',12)} 发送</button></div></div>`;
@@ -745,6 +747,17 @@ function refreshDanmakuStatus() {
   try {
     const r = JSON.parse(AndroidBridge.getDanmakuStatus(state.danmakuRoom));
     updateDmConn(!!r.connected, r.msg);
+    // 弹幕流区占位：不再笼统"连接弹幕中"，按真实状态/房间情况分步显示
+    const room = state.rooms.find(x => x.roomId === state.danmakuRoom);
+    const stream = $('#dmStream');
+    let empty;
+    if (r.connected) empty = '已连接，等待弹幕…';
+    else if (r.msg && r.msg !== '未连接' && r.msg !== '已断开') empty = r.msg;   // 分步：获取服务器/连接/认证/失败/详情
+    else if (room && !room.danmakuOpen) empty = '弹幕未开启（房间设置里打开「弹幕监听」）';
+    else if (room && room.liveStatus !== 1 && room.liveStatus !== 2) empty = '主播未开播，暂无弹幕';
+    else empty = '未连接';
+    const e = stream && stream.querySelector('.dm-empty');
+    if (e) e.textContent = empty;  // 有弹幕时占位已被 appendDanmaku 移除，此处 e 仅无弹幕时存在
   } catch(e){}
 }
 
