@@ -306,14 +306,25 @@ class ListenService : Service() {
     /** 直播流播完（下播 m3u8 ENDLIST）时的清理 */
     private fun onLiveEnded() {
         val rid = currentRoomId
-        stopPlayback(false)
+        resetPlayback()
         notify(rid, false, "直播已结束")
     }
 
     private fun finishError(roomId: Long, msg: String) {
-        Logger.e("Listen", "收听失败并停止 room=$roomId: $msg")
-        stopPlayback(false)
+        Logger.e("Listen", "收听失败 room=$roomId: $msg")
+        resetPlayback()
         notify(roomId, false, msg)
+    }
+
+    /**
+     * 失败/结束后只释放播放器并复位状态，**不停止服务**。
+     * 关键:Android 对刚 stopSelf 的服务立即重启会有节流**静默拦截**(调用正常但服务不创建,已实测复现);
+     * 保持服务常驻(FGS 通知占位),下次点击直接走 onStartCommand,不再触发创建节流。
+     */
+    private fun resetPlayback() {
+        stopPlayback(true)
+        paused = true
+        try { startForeground(NOTIFICATION_ID, buildNotification(0, false)) } catch (_: Exception) {}
     }
 
     /** 清理播放器；release=false 时同时撤前台通知并停止服务 */
