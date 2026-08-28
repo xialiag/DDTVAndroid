@@ -283,6 +283,15 @@ svg{display:block;flex:0 0 auto}
 .seg-btn{border:none;background:transparent;color:var(--fg-dim);font-size:var(--fs-sm);
   padding:5px 12px;border-radius:var(--r-pill);cursor:pointer;white-space:nowrap}
 .seg-btn.on{background:var(--accent);color:#fff;font-weight:600}
+/* --- 字幕弹窗(分段控件+行) --- */
+.seg{display:inline-flex;gap:4px;background:var(--bg-input);border-radius:var(--r-pill);padding:3px}
+.seg-btn{border:none;background:transparent;color:var(--fg-dim);font-size:var(--fs-sm);
+  padding:5px 12px;border-radius:var(--r-pill);cursor:pointer;white-space:nowrap}
+.seg-btn.on{background:var(--accent);color:#fff;font-weight:600}
+.sub-card{max-width:400px}
+.sub-row{display:flex;align-items:center;justify-content:space-between;gap:10px;
+  padding:9px 0;border-bottom:1px solid var(--border)}
+.sub-row > span{font-size:var(--fs-sm);color:var(--fg);flex:0 0 auto}
 /* --- 开关 --- */
 .switch-row{display:flex;align-items:center;justify-content:space-between;gap:16px;padding:12px 0;
   border-bottom:1px solid var(--border)}
