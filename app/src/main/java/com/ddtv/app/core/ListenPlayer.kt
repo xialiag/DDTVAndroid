@@ -44,8 +44,11 @@ object ListenPlayer {
 
     fun activeRoom(): Long = currentRoomId
 
-    /** 开始收听(网络取流在子线程,播放器构建在主线程；seq 保证旧操作失效) */
-    fun start(roomId: Long) {
+    /** 开始收听；统一主线程调度(@JavascriptInterface 回调在 WebView 线程,ExoPlayer 操作必须在主线程) */
+    fun start(roomId: Long) { mainHandler.post { doStart(roomId) } }
+
+    private fun doStart(roomId: Long) {
+        if (appCtx == null) return
         val ctx = appCtx ?: return
         Logger.i("Listen", "[player] start room=$roomId 录制中=${LiveRecorder.isRecordingRoom(roomId)}")
         paused = false
@@ -167,12 +170,14 @@ object ListenPlayer {
         try { listener?.invoke(roomId, p, label) } catch (_: Exception) {}
     }
 
-    /** 失败：递增序号使在途取流/重试全部失效，释放并复位 */
+    /** 失败：递增序号使在途取流/重试全部失效，释放并复位(统一主线程释放 player) */
     private fun finishError(roomId: Long, msg: String) {
-        Logger.e("Listen", "[player] 收听失败 room=$roomId: $msg")
-        releaseAndClear()
-        paused = true
-        notify(roomId, false, msg)
+        mainHandler.post {
+            Logger.e("Listen", "[player] 收听失败 room=$roomId: $msg")
+            releaseAndClear()
+            paused = true
+            notify(roomId, false, msg)
+        }
     }
 
     private fun releaseAndClear() {
@@ -181,8 +186,10 @@ object ListenPlayer {
         currentRoomId = 0L
     }
 
-    /** 播放/暂停切换(前端控制器点击)；暂停保留房间号,再点恢复 */
-    fun toggle() {
+    /** 播放/暂停切换(前端控制器点击)；统一主线程调度 */
+    fun toggle() { mainHandler.post { doToggle() } }
+
+    private fun doToggle() {
         val rid = currentRoomId
         if (rid == 0L) { Logger.i("Listen", "[player] toggle 未在收听"); return }
         val p = player
@@ -201,8 +208,10 @@ object ListenPlayer {
         start(rid)
     }
 
-    /** 停止收听(彻底停止,在途取流作废) */
-    fun stop() {
+    /** 停止收听(彻底停止)；统一主线程调度 */
+    fun stop() { mainHandler.post { doStop() } }
+
+    private fun doStop() {
         Logger.i("Listen", "[player] 停止收听")
         val rid = currentRoomId
         releaseAndClear()
