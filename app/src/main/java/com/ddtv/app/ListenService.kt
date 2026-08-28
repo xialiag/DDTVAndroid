@@ -53,6 +53,8 @@ class ListenService : Service() {
 
         @Volatile private var currentRoomId = 0L
         @Volatile var playing = false
+        /** 服务是否真的被系统创建(onCreate 置 true;启动探针用) */
+        @Volatile var everCreated = false
 
         /** 当前收听的房间号，0=未收听 */
         fun activeRoom(): Long = currentRoomId
@@ -62,9 +64,12 @@ class ListenService : Service() {
                 action = ACTION_START
                 putExtra(EXTRA_ROOM_ID, roomId)
             }
+            Logger.i("Listen", "[bridge] 调用服务启动 room=$roomId (api=${Build.VERSION.SDK_INT})")
+            everCreated = false
             try {
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) context.startForegroundService(i)
                 else context.startService(i)
+                Logger.i("Listen", "[bridge] 服务启动调用已发出(无异常)")
             } catch (e: Exception) {
                 // Android 12+ 后台限制：从后台直接拉前台服务可能被拒，回退 startService（仍能播，但无前台通知）
                 Logger.w("Listen", "startForegroundService 失败，回退 startService: ${e.message}")
@@ -72,6 +77,15 @@ class ListenService : Service() {
                     Logger.e("Listen", "启动听直播服务失败: ${e2.message}")
                 }
             }
+            // 2 秒探针：服务若被系统拦截未创建,给出铁证日志(厂商 ROM/后台限制等情况)
+            Thread({
+                try { Thread.sleep(2500) } catch (_: Exception) {}
+                if (!everCreated) {
+                    Logger.e("Listen", "[bridge] 2.5s 后服务仍未创建!系统拦截了前台服务(检查:通知权限/电池限制/厂商ROM后台规则)")
+                } else {
+                    Logger.i("Listen", "[bridge] 探针:服务已创建,当前房间=${currentRoomId}")
+                }
+            }, "ListenProbe").apply { isDaemon = true; start() }
         }
 
         fun stop(context: Context) {
@@ -98,6 +112,7 @@ class ListenService : Service() {
     override fun onCreate() {
         super.onCreate()
         Logger.i("Listen", "[service] onCreate")
+        everCreated = true
         createChannel()
         // Android 14+ mediaPlayback 前台服务要求活跃 MediaSession,否则 startForeground 会被拒/崩溃
         try {
