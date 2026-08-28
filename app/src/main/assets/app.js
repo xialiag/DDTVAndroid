@@ -1,4 +1,4 @@
-/* ===== DDTV Android — UI 逻辑 v0.7.53 =====
+/* ===== DDTV Android — UI 逻辑 v0.7.54 =====
    结构:工具 → 图标 → 状态 → 主题 → 弹层 → 布局 → 各视图渲染 → 原生回调 → 操作 → 初始化
    模板规则:禁止内联样式(动态数据除外),一律用 app.css 里的类;图标用 ic() */
 'use strict';
@@ -1965,8 +1965,12 @@ function removeRoom(rid) {
 function setAutoRecord(rid,on) { AndroidBridge.setAutoRecord(rid,on); }
 function setRemind(rid,on) { AndroidBridge.setRemind(rid,on); }
 function openLive(rid) { const r=JSON.parse(AndroidBridge.openLiveRoom(rid)); toast(r.msg, r.code<0?'err':'ok'); }
+let _listenBusyUntil = 0;
 function isListening(rid){ return state.listen && state.listen.active && state.listen.roomId === rid; }
 function toggleListen(rid){
+  const now = Date.now();
+  if (now < _listenBusyUntil) return;  // 防连点(听直播/停止有延迟)
+  _listenBusyUntil = now + 1500;
   const r = state.rooms.find(x=>x.roomId===rid); if(!r) return;
   if (isListening(rid)) {
     try{ AndroidBridge.stopListen(); }catch(e){}
@@ -2010,18 +2014,23 @@ function syncListenCtl() {
   ctl.innerHTML = `<span class="lc-dot${playing?' on':''}"></span>${label}`;
   ctl.title = playing ? '点击暂停' : '点击继续';
 }
+let _ctlBusyUntil = 0;
 function togglePause() {
+  const now = Date.now();
+  if (now < _ctlBusyUntil) return;  // 防连点:播放/暂停有延迟,连点会造成状态来回切换
+  _ctlBusyUntil = now + 1500;
+  const ctl = document.querySelector('#tabs .listen-ctl');
+  if (ctl) { ctl.innerHTML = '<span class="lc-dot on"></span>切换中…'; ctl.classList.add('busy'); }
   try {
     const s = JSON.parse(AndroidBridge.getListenStatus());
     if (s && !s.active) {
-      // 收听服务已停止(播放出错/直播结束)，点击改为重新开始收听，避免"点了没反应"
+      // 收听服务已停止(播放出错/直播结束)，点击改为重新开始收听
       const rid = state.listen && state.listen.roomId;
-      toast('重新连接…','ok');
       try { JSON.parse(AndroidBridge.startListen(rid||0)); } catch(e){ toast('启动失败:'+e,'err'); }
       return;
     }
     AndroidBridge.toggleListenPlay();
-  } catch(e){}
+  } catch(e){ _ctlBusyUntil = 0; if (ctl) ctl.classList.remove('busy'); }
 }
 function setDanmaku(rid,on) { AndroidBridge.setDanmakuOpen(rid,on); }
 function setAudioOnlyRoom(rid,on) {
