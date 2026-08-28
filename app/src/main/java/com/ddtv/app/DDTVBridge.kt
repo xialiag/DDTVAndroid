@@ -471,7 +471,7 @@ class DDTVBridge(private val context: Context, private val webView: WebView) {
                 autoUpdate = o.optBoolean("autoUpdate", autoUpdate)
                 autoStart = o.optBoolean("autoStart", autoStart)
                 danmakuSrt = o.optBoolean("danmakuSrt", danmakuSrt)
-                danmakuSubFormat = o.optString("danmakuSubFormat", danmakuSubFormat).let { if (it == "ass" || it == "srt") it else "srt" }
+                danmakuSubFormat = o.optString("danmakuSubFormat", danmakuSubFormat).let { if (it == "ass" || it == "assdm" || it == "srt") it else "srt" }
             }
             RoomManager.saveSettings()
             com.ddtv.app.core.LiveRecorder.applySettings(RoomManager.settings)
@@ -498,7 +498,7 @@ class DDTVBridge(private val context: Context, private val webView: WebView) {
 
     // ============ 自动更新（GitHub Releases，参照原版 ProgramUpdates） ============
 
-    private val currentVersion: String = "0.7.32"
+    private val currentVersion: String = "0.7.33"
 
     /** 解析 "v0.7.0" / "0.7.0-beta1" 为可比较数字段列表 */
     private fun versionParts(v: String): List<Long> {
