@@ -492,7 +492,7 @@ class DDTVBridge(private val context: Context, private val webView: WebView) {
 
     // ============ 自动更新（GitHub Releases，参照原版 ProgramUpdates） ============
 
-    private val currentVersion: String = "0.7.24"
+    private val currentVersion: String = "0.7.25"
 
     /** 解析 "v0.7.0" / "0.7.0-beta1" 为可比较数字段列表 */
     private fun versionParts(v: String): List<Long> {
@@ -1322,6 +1322,60 @@ class DDTVBridge(private val context: Context, private val webView: WebView) {
         CrashHandler.getCrashLogs(context).forEach { if (it.delete()) n++ }
         com.ddtv.app.core.Logger.i("Bridge", "已清除 $n 个崩溃日志")
         return """{"code":1,"msg":"已清除 $n 个崩溃日志"}"""
+    }
+
+    // ============ 历史日志文件（按天 ddtv_*.log，App 内管理页） ============
+
+    /** 历史日志文件列表 → [{filename,size,time,path}]（ddtv_*.log 按天升序保留，7天轮转） */
+    @JavascriptInterface
+    fun getLogFiles(): String {
+        return try {
+            val dir = com.ddtv.app.core.Logger.logDir() ?: return "[]"
+            val arr = JSONArray()
+            dir.listFiles { f -> f.name.matches(Regex("ddtv_[0-9]+\\.log")) }
+                ?.sortedByDescending { it.lastModified() }?.forEach { f ->
+                    arr.put(JSONObject().apply {
+                        put("filename", f.name)
+                        put("size", f.length())
+                        put("time", f.lastModified())
+                        put("path", f.absolutePath)
+                    })
+                }
+            arr.toString()
+        } catch (e: Exception) { "[]" }
+    }
+
+    /** 读取历史日志文件内容（白名单防路径穿越；取前 60000 字符防卡顿） */
+    @JavascriptInterface
+    fun readLogFile(name: String): String {
+        return try {
+            if (!name.matches(Regex("ddtv_[0-9]+\\.log"))) return """{"code":-1,"msg":"非法文件名"}"""
+            val dir = com.ddtv.app.core.Logger.logDir() ?: return """{"code":-1,"msg":"日志目录不存在"}"""
+            val f = java.io.File(dir, name)
+            if (!f.exists()) return """{"code":-1,"msg":"文件不存在"}"""
+            val text = try { f.readText(Charsets.UTF_8) } catch (_: Exception) { "" }
+            JSONObject().apply {
+                put("code", 1)
+                put("filename", name)
+                put("content", text.take(60000))
+                put("path", f.absolutePath)
+            }.toString()
+        } catch (e: Exception) {
+            """{"code":-1,"msg":"读取失败: ${e.message}"}"""
+        }
+    }
+
+    /** 删除历史日志文件 */
+    @JavascriptInterface
+    fun deleteLogFile(name: String): String {
+        return try {
+            if (!name.matches(Regex("ddtv_[0-9]+\\.log"))) return """{"code":-1,"msg":"非法文件名"}"""
+            val dir = com.ddtv.app.core.Logger.logDir() ?: return """{"code":-1,"msg":"日志目录不存在"}"""
+            val f = java.io.File(dir, name)
+            if (f.exists()) f.delete()
+            com.ddtv.app.core.Logger.i("Bridge", "已删除历史日志: $name")
+            """{"code":1,"msg":"已删除"}"""
+        } catch (e: Exception) { """{"code":-1,"msg":"删除失败: ${e.message}"}""" }
     }
 
     // ============ 关注列表 ============
