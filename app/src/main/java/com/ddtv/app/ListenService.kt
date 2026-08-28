@@ -123,6 +123,7 @@ class ListenService : Service() {
     }
 
     private fun handleStart(roomId: Long) {
+        Logger.i("Listen", "开始收听 room=$roomId 录制中=${LiveRecorder.isRecordingRoom(roomId)}")
         paused = false
         if (roomId == 0L) { stopPlayback(false); return }
         // 同一房间已在播：只把前台通知顶上来，不重建
@@ -173,7 +174,7 @@ class ListenService : Service() {
                 } else {
                     finishError(roomId, "该直播暂无可用线路"); return@Thread
                 }
-                Logger.i("Listen", "room=$roomId 播放 ${if (isHls) "HLS" else "FLV"}: ${url.take(120)}")
+                Logger.i("Listen", "room=$roomId 选线=${if (isHls) "HLS" else "FLV"} url=${url.take(120)} (flv=${info.flvLines.size}条 hls=${info.hlsLines.size}条 录制节点=${recHost ?: "无"})")
                 mainHandler.post { prepareAndPlay(roomId, url, isHls) }
             } catch (e: Exception) {
                 Logger.e("Listen", "取流异常: ${e.message}")
@@ -199,6 +200,7 @@ class ListenService : Service() {
             } else {
                 ProgressiveMediaSource.Factory(ds).createMediaSource(MediaItem.fromUri(url))
             }
+            Logger.i("Listen", "构建播放器 url=${url.take(90)} isHls=$isHls")
             val p = ExoPlayer.Builder(this).build().apply {
                 setAudioAttributes(
                     AudioAttributes.Builder()
@@ -214,7 +216,7 @@ class ListenService : Service() {
                 addListener(object : Player.Listener {
                     override fun onPlaybackStateChanged(state: Int) {
                         when (state) {
-                            Player.STATE_READY -> { reconnectCount = 0; notify(roomId, true, "正在收听") }
+                            Player.STATE_READY -> { reconnectCount = 0; Logger.i("Listen", "播放就绪(READY) room=$roomId"); notify(roomId, true, "正在收听") }
                             Player.STATE_BUFFERING -> notify(roomId, true, "缓冲中…")
                             Player.STATE_ENDED -> onLiveEnded()
                             else -> {}
@@ -231,13 +233,18 @@ class ListenService : Service() {
                             reconnectCount++
                             Logger.w("Listen", "第 $reconnectCount/2 次重连…")
                             notify(roomId, false, "播放出错，尝试重连…")
-                            mainHandler.postDelayed({ handleStart(roomId) }, reconnectCount * 3000L)
+                            // 必须先释放旧播放器:否则 handleStart 命中"同房间在播"分支直接返回,重试无效
+                            mainHandler.postDelayed({
+                                stopPlayback(true)
+                                handleStart(roomId)
+                            }, reconnectCount * 3000L)
                         } else {
                             finishError(roomId, "播放出错（$detail）".take(64))
                         }
                     }
                     override fun onIsPlayingChanged(p: Boolean) {
                         playing = p
+                        Logger.d("Listen", "isPlaying=$p room=$roomId")
                         // 缓冲/等待数据时 onIsPlayingChanged(false) 会触发，显示"缓冲中…"而非误导的"已暂停"
                         notify(roomId, p, if (p) "正在收听" else "缓冲中…")
                         updateNotification(roomId, p)
@@ -284,6 +291,7 @@ class ListenService : Service() {
     }
 
     private fun finishError(roomId: Long, msg: String) {
+        Logger.e("Listen", "收听失败并停止 room=$roomId: $msg")
         stopPlayback(false)
         notify(roomId, false, msg)
     }
