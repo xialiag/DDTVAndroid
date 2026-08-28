@@ -26,7 +26,6 @@ import androidx.media3.exoplayer.source.ProgressiveMediaSource
 import com.ddtv.app.core.BiliLiveApi
 import com.ddtv.app.core.Http
 import com.ddtv.app.core.LiveRecorder
-import com.ddtv.app.core.LiveStreamProxy
 import com.ddtv.app.core.Logger
 import com.ddtv.app.core.RoomManager
 
@@ -92,8 +91,6 @@ class ListenService : Service() {
     private var player: ExoPlayer? = null
     private var reconnectCount = 0
     private var paused = false
-    @Volatile private var usingLocal = false   // 当前是否走边录边播本地代理流
-    @Volatile private var forceNetwork = false // 本地流出错后强制回退网络取流
 
     override fun onBind(intent: Intent?): IBinder? = null
 
@@ -144,18 +141,8 @@ class ListenService : Service() {
         // 跟随房间清晰度设置（RoomCard.quality，默认原画）
         val qn = RoomManager.getRoom(roomId)?.quality ?: 150
 
-        // 边录边播：该房间正在录制且本地流未出过错 → 直接用本地流代理(录制流已读到的字节)，
-        // 不再单独 B 站取流，避免并发取流 403/无反应；本地流出错(forceNetwork)时回退网络取流
-        if (LiveRecorder.isRecordingRoom(roomId) && !forceNetwork) {
-            LiveStreamProxy.ensureServer()
-            usingLocal = true
-            val url = "http://127.0.0.1:${LiveStreamProxy.PORT}/live?room=$roomId&t=${System.currentTimeMillis()}"
-            Logger.i("Listen", "room=$roomId 边录边播(本地代理流): $url")
-            mainHandler.post { prepareAndPlay(roomId, url, false) }
-            return
-        }
-        usingLocal = false
-        forceNetwork = false
+        // 始终走 B 站网络取流(录制时下方按线路错开)，保证 ExoPlayer 兼容性稳定；
+        // 边录边播(本地代理流)作为后续可选增强，不在默认路径(ExoPlayer 对代理流兼容性差会反复失败)
 
         // 取流（网络）在子线程，完成后主线程构建播放器
         Thread({
@@ -230,10 +217,8 @@ class ListenService : Service() {
                         Logger.e("Listen", "播放错误: $detail")
                         if (reconnectCount < 2) {
                             reconnectCount++
-                            Logger.w("Listen", "第 $reconnectCount/2 次重连…(${if (usingLocal) "回退网络" else "重试"})")
+                            Logger.w("Listen", "第 $reconnectCount/2 次重连…")
                             notify(roomId, false, "播放出错，尝试重连…")
-                            // 边录边播(本地代理流)出错 → 强制回退网络取流，避免本地流反复失败
-                            if (usingLocal) forceNetwork = true
                             mainHandler.postDelayed({ handleStart(roomId) }, reconnectCount * 3000L)
                         } else {
                             finishError(roomId, "播放出错（$detail）".take(64))
@@ -249,16 +234,6 @@ class ListenService : Service() {
                 setMediaSource(mediaSource)
                 prepare()
                 playWhenReady = true
-            }
-            // 边录边播(本地代理流)12s 未进入 READY(数据不足/解析异常) → 强制回退网络取流，避免无限缓冲
-            if (usingLocal) {
-                mainHandler.postDelayed({
-                    if (p.playbackState != Player.STATE_READY) {
-                        Logger.w("Listen", "本地(边录边播)流 12s 未就绪，回退网络取流")
-                        forceNetwork = true
-                        handleStart(currentRoomId)
-                    }
-                }, 12000)
             }
             player = p
         } catch (e: Exception) {
