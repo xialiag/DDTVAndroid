@@ -1,4 +1,4 @@
-/* ===== DDTV Android — UI 逻辑 v0.7.28 =====
+/* ===== DDTV Android — UI 逻辑 v0.7.29 =====
    结构:工具 → 图标 → 状态 → 主题 → 弹层 → 布局 → 各视图渲染 → 原生回调 → 操作 → 初始化
    模板规则:禁止内联样式(动态数据除外),一律用 app.css 里的类;图标用 ic() */
 'use strict';
@@ -1366,6 +1366,7 @@ function renderQrcode(evt) {
 function renderSettings() {
   const s=state.settings, body=$('#editorBody');
   body.innerHTML=`<div class="view">
+    <div class="btn-row tight"><button class="btn btn-sec btn-sm" onclick="renderFaq()">${ic('alert',12)} 常见问题(保活/字幕/日志)</button></div>
     <h2>监控</h2>
     <div class="switch-row"><div class="sw-text"><div class="sw-label">轮询间隔</div><div class="sw-desc">检测开播状态的频率</div></div>
       <div class="sw-right"><div id="setPoll"></div></div></div>
@@ -1424,9 +1425,9 @@ function renderSettings() {
       <label class="switch"><input type="checkbox" id="setAutoStart" onchange="saveSettings()"><span class="slider"></span></label></div>
     <div class="switch-row"><div class="sw-text"><div class="sw-label">屏幕常亮</div><div class="sw-desc">保持屏幕常亮,方便查看录制/弹幕状态</div></div>
       <label class="switch"><input type="checkbox" id="setKeepScreen" onchange="saveSettings()"><span class="slider"></span></label></div>
-    <div class="switch-row"><div class="sw-text"><div class="sw-label">后台保活设置</div><div class="sw-desc">进入系统「应用信息/后台应用管理」界面，允许 DDTV 后台运行、自启动、后台弹出界面，避免被系统杀进程</div></div>
+    <div class="switch-row"><div class="sw-text"><div class="sw-label">后台保活设置</div><div class="sw-desc">系统应用信息页允许自启动/后台运行,详见「常见问题」</div></div>
       <div class="sw-right"><button class="btn btn-sec btn-sm" onclick="openAppBackgroundSettings()">去设置</button></div></div>
-    <div class="switch-row"><div class="sw-text"><div class="sw-label">小锁防杀</div><div class="sw-desc">在「最近任务」里长按 DDTV 卡片 → 点击小锁🔒图标锁定；锁定后系统清理/杀后台时不会杀掉它，配合前台服务可稳定持续录制</div></div>
+    <div class="switch-row"><div class="sw-text"><div class="sw-label">小锁防杀</div><div class="sw-desc">在「最近任务」长按 DDTV 卡片 → 点小锁🔒锁定,系统清理时不会杀掉它</div></div>
     <h2>调试</h2>
     <div class="switch-row"><div class="sw-text"><div class="sw-label">调试服务器</div><div class="sw-desc">端口 19864，本机/同一WiFi可查看状态与日志；默认关闭</div></div>
       <label class="switch"><input type="checkbox" id="setDebug" onchange="toggleDebugServer()"><span class="slider"></span></label></div>
@@ -1486,6 +1487,30 @@ function pickOutputDir() {
 function openAppBackgroundSettings() {
   try { const r = JSON.parse(AndroidBridge.openAppBackgroundSettings()); toast(r.msg, r.code<0?'err':'ok'); }
   catch(e) { toast('无法打开：'+e,'err'); }
+}
+
+/* ========== 常见问题(FAQ) ========== */
+const FAQS = [
+  {q:'如何让录制不被系统杀掉、稳定持续录制？', a:'坚持五步保活链：\n① 通知栏常驻前台服务(录制/监控时不退出)\n② 设置-权限-「电池优化白名单」点授权(忽略电池优化)\n③ 设置-保活-「开机自启」开启\n④ 设置-保活-「后台保活设置」→系统应用信息页,允许自启动、后台运行、后台弹出界面\n⑤ 在「最近任务」长按 DDTV 卡片→点小锁🔒锁定\n五步都做到,长直播基本不会再被系统杀掉。'},
+  {q:'什么是「小锁」？怎么锁？', a:'Android 的「最近任务」里,每个应用卡片通常有个小锁🔒图标(有的在卡片右下角或长按弹出)。在最近任务里长按 DDTV 卡片,选择「锁定/保持运行」,系统清理后台和省电时会跳过已锁定的应用。配合前台服务,即使屏幕熄灭、后台清理,DDTV 也会继续录制。'},
+  {q:'国产手机(如小米/红米)杀后台特别狠,怎么办？', a:'以 MIUI/HyperOS 为例:设置-应用设置-应用管理 找到 DDTV→省电策略选「无限制」;「自启动」允许;「后台弹出界面」允许。再把 DDTV 在最近任务里上锁。部分机型还需在「电池-应用智能省电」中排除 DDTV。不同 ROM 入口略有差异,认准「允许自启动 + 后台无限制 + 上锁」三件套即可。'},
+  {q:'录制的弹幕/礼物/字幕存在哪？', a:'都在录制目录下:<房名>/<日期>/ 目录:danmu_*.json(全量弹幕/礼物/SC/上舰)、danmu_*_弹幕.csv、danmu_*_礼物.csv、danmu_*_上舰.csv、danmu_*_SC.csv。若开启「结束后自动生成字幕」,还会生成 danmu_*.srt 或 .ass(格式在设置里选)。'},
+  {q:'怎样把弹幕变成能挂到视频的字幕？', a:'两种方式:\n① 自动:设置-录制-「结束后自动生成字幕」开启,字幕格式选 SRT/ASS,录制结束自动生成\n② 手动:打开「修复工具」页,选中某个录像文件→点「导出字幕(.srt/.ass)」,生成与录像同名的字幕,可分享。'},
+  {q:'录像中途断流后,文件变小或中间丢了一段？', a:'直播断流(网络波动/CDN 线路切换)时,App 会重连:设置-录制-「FLV 断流续录」开启则续写同一文件(推荐),关闭则切新文件。若已生成的片段有损伤,可用「修复工具-修复损坏」。若丢失明显,多为当时网络不稳导致,建议在稳定 WiFi 下录制。'},
+  {q:'日志在哪看？怎么导出？', a:'「运行日志」页:顶部可切「历史文件」(按天,保留7天)、「崩溃日志」(闪退堆栈),还能「保存到文件」再分享。调试服务器(19864)功能也保留,作为备用。'},
+  {q:'录制完没自动转 mp4？', a:'确认设置-录制-「自动转封装 MP4」已开启。开启后录制结束/下播自动用 ffmpeg 转封装。也可以打开「修复工具」选中录像→「快速转封装」。'},
+  {q:'在线听直播是什么？会占用录制吗？', a:'「听直播」只播放声音,不占用录制通道、不写文件,可边录边听。它和录制各自独立取流,互不影响。'},
+];
+function renderFaq() {
+  const body = $('#editorBody');
+  subHeader('常见问题', "renderEditor()");
+  body.innerHTML = `<div class="log-toolbar">
+      <span class="toolbar-text">点击问题展开查看答案（共 ${FAQS.length} 条）</span></div>
+    <div class="log-panel">${FAQS.map((f,i)=>`
+      <div class="crash-item faq-item" onclick="this.classList.toggle('open')">
+        <div class="crash-head"><span class="crash-name">${i+1}. ${esc(f.q)}</span></div>
+        <div class="crash-body">${esc(f.a).replace(/\n/g,'<br>')}</div>
+      </div>`).join('')}</div>`;
 }
 
 /* ========== 权限（设置页手动授权） ========== */
