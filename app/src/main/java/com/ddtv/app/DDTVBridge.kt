@@ -440,6 +440,7 @@ class DDTVBridge(private val context: Context, private val webView: WebView) {
             put("updateRepo", s.updateRepo)
             put("autoUpdate", s.autoUpdate)
             put("autoStart", s.autoStart)
+            put("danmakuSrt", s.danmakuSrt)
             put("outputDir", RoomManager.outputDir.absolutePath)
             put("version", com.ddtv.app.BuildConfig.VERSION_NAME)
         }.toString()
@@ -468,6 +469,7 @@ class DDTVBridge(private val context: Context, private val webView: WebView) {
                 updateRepo = o.optString("updateRepo", updateRepo)
                 autoUpdate = o.optBoolean("autoUpdate", autoUpdate)
                 autoStart = o.optBoolean("autoStart", autoStart)
+                danmakuSrt = o.optBoolean("danmakuSrt", danmakuSrt)
             }
             RoomManager.saveSettings()
             com.ddtv.app.core.LiveRecorder.applySettings(RoomManager.settings)
@@ -494,7 +496,7 @@ class DDTVBridge(private val context: Context, private val webView: WebView) {
 
     // ============ 自动更新（GitHub Releases，参照原版 ProgramUpdates） ============
 
-    private val currentVersion: String = "0.7.26"
+    private val currentVersion: String = "0.7.27"
 
     /** 解析 "v0.7.0" / "0.7.0-beta1" 为可比较数字段列表 */
     private fun versionParts(v: String): List<Long> {
@@ -1224,6 +1226,16 @@ class DDTVBridge(private val context: Context, private val webView: WebView) {
             """{"code":1,"msg":"已打开系统应用设置"}"""
         } catch (e: Exception) {
             """{"code":-1,"msg":"无法打开: ${e.message}"}"""
+        }
+    }
+
+    /** 为录像文件生成同名 .srt 字幕（关联同目录弹幕 json，工具页用） */
+    @JavascriptInterface
+    fun exportDanmakuSrt(path: String): String {
+        return try {
+            com.ddtv.app.core.DanmakuExport.exportForVideo(path)
+        } catch (e: Exception) {
+            """{"code":-1,"msg":"生成字幕失败: ${e.message}"}"""
         }
     }
 
