@@ -118,6 +118,9 @@ object LiveRecorder {
         }
     }
 
+    /** 房间当前是否在录制（Listen 在线听直播取流时据此错开线路，避免同一直播间并发取流被 B 站限流 403） */
+    fun isRecordingRoom(roomId: Long): Boolean = synchronized(running) { running.containsKey(roomId) }
+
     @Volatile private var lastBackfillAt = 0L
 
     /**

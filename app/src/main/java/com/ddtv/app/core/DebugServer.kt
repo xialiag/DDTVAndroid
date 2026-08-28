@@ -76,7 +76,11 @@ object DebugServer {
             running = true
             Thread({
                 try {
-                    server = ServerSocket(PORT, 8, InetAddress.getByName("0.0.0.0"))
+                    // SO_REUSEADDR：缓解上次进程被杀后端口 TIME_WAIT 残留导致的 EADDRINUSE
+                    val ss = ServerSocket()
+                    ss.reuseAddress = true
+                    ss.bind(java.net.InetSocketAddress(PORT), 8)
+                    server = ss
                     // 提前探测局域网 IP，启动日志直接给出可访问地址，免去手动查手机 IP
                     val url = accessUrl()
                     Logger.i("Debug", "调试服务器已启动: 端口 $PORT（本机浏览器 $url ；同一WiFi电脑/助手访问同上）")

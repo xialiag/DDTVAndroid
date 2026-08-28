@@ -25,6 +25,7 @@ import androidx.media3.exoplayer.hls.HlsMediaSource
 import androidx.media3.exoplayer.source.ProgressiveMediaSource
 import com.ddtv.app.core.BiliLiveApi
 import com.ddtv.app.core.Http
+import com.ddtv.app.core.LiveRecorder
 import com.ddtv.app.core.Logger
 import com.ddtv.app.core.RoomManager
 
@@ -153,8 +154,10 @@ class ListenService : Service() {
                 val hlsUrl = info.hlsUrl
                 val flvUrl = info.flvUrl
                 if (hlsUrl.isEmpty() && flvUrl.isEmpty()) { finishError(roomId, "该直播暂无可用线路"); return@Thread }
-                // B站直播 FLV(http-stream) 是 ExoPlayer 最稳路径（HLS fmp4 直播常见 Source error）→ FLV 优先，HLS 兜底
-                val (url, isHls) = if (flvUrl.isNotEmpty()) flvUrl to false else hlsUrl to true
+                // B站直播 FLV(http-stream) 是 ExoPlayer 最稳路径（HLS fmp4 直播常见 Source error）→ 默认 FLV 优先，HLS 兜底
+                // 但该房间正在录制时优先用 HLS（录制默认 FLV，两者走不同协议/线路，避免同一直播间并发取流被 B 站限流导致 403/无反应）
+                val useFlv = flvUrl.isNotEmpty() && (!LiveRecorder.isRecordingRoom(roomId) || hlsUrl.isEmpty())
+                val (url, isHls) = if (useFlv) flvUrl to false else hlsUrl to true
                 Logger.i("Listen", "room=$roomId 播放 ${if (isHls) "HLS" else "FLV"}: ${url.take(120)}")
                 mainHandler.post { prepareAndPlay(roomId, url, isHls) }
             } catch (e: Exception) {
