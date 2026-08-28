@@ -1,4 +1,4 @@
-/* ===== DDTV Android — UI 逻辑 v0.7.44 =====
+/* ===== DDTV Android — UI 逻辑 v0.7.45 =====
    结构:工具 → 图标 → 状态 → 主题 → 弹层 → 布局 → 各视图渲染 → 原生回调 → 操作 → 初始化
    模板规则:禁止内联样式(动态数据除外),一律用 app.css 里的类;图标用 ic() */
 'use strict';
@@ -1980,7 +1980,7 @@ function toggleListen(rid){
   let res = { code:-1, msg:'启动失败' };
   try { res = JSON.parse(AndroidBridge.startListen(rid)); } catch(e){ res = { code:-1, msg:'启动失败: '+e }; }
   toast(res.msg, res.code<0?'err':(res.code===0?'warn':'ok'));
-  if (res.code < 0) return;
+  if (res.code <= 0) return;  // code=0(未开播拒绝)也不设收听状态,避免"已暂停"假象+点击无效
   state.listen = {active:true, playing:false, roomId:rid, name:r.name||''};
   if (state._detailOpen && state.currentRoom === rid) updateRoomDetail(rid);
   syncListenCtl();  // 立即刷新 tabs 控制器(开始收听后无需切页)
