@@ -336,8 +336,15 @@ class DDTVBridge(private val context: Context, private val webView: WebView) {
     /** 在线听直播：播放当前房间音频（无画面，可后台/锁屏收听） */
     @JavascriptInterface
     fun startListen(roomId: Long): String {
-        val card = RoomManager.getRoom(roomId) ?: return """{"code":-1,"msg":"房间不存在"}"""
-        if (card.liveStatus != 1 && card.liveStatus != 2) return """{"code":0,"msg":"房间未开播，无法收听"}"""
+        val card = RoomManager.getRoom(roomId) ?: run {
+            com.ddtv.app.core.Logger.i("Listen", "[bridge] startListen 房间不存在 room=$roomId")
+            return """{"code":-1,"msg":"房间不存在"}"""
+        }
+        if (card.liveStatus != 1 && card.liveStatus != 2) {
+            com.ddtv.app.core.Logger.i("Listen", "[bridge] startListen 未开播拒绝 room=$roomId liveStatus=${card.liveStatus}")
+            return """{"code":0,"msg":"房间未开播，无法收听"}"""
+        }
+        com.ddtv.app.core.Logger.i("Listen", "[bridge] startListen room=$roomId liveStatus=${card.liveStatus} 录制中=${com.ddtv.app.core.LiveRecorder.isRecordingRoom(roomId)}")
         ListenService.start(context, roomId)
         return """{"code":1,"msg":"正在连接直播…"}"""
     }
@@ -498,7 +505,7 @@ class DDTVBridge(private val context: Context, private val webView: WebView) {
 
     // ============ 自动更新（GitHub Releases，参照原版 ProgramUpdates） ============
 
-    private val currentVersion: String = "0.7.44"
+    private val currentVersion: String = "0.7.45"
 
     /** 解析 "v0.7.0" / "0.7.0-beta1" 为可比较数字段列表 */
     private fun versionParts(v: String): List<Long> {
