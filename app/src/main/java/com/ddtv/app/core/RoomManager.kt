@@ -749,7 +749,8 @@ object RoomManager {
             if (item.type == "DANMU_MSG" && isBarrageBlocked(item.content)) return
             danmakuBuffer.getOrPut(item.roomId) { mutableListOf() }.let { buf ->
                 buf.add(item)
-                while (buf.size > 500) buf.removeAt(0)
+                // 弹幕缓冲上限：长直播早期礼物/上舰/SC 易被逐出，提升到 2000 保内容完整
+                while (buf.size > 2000) buf.removeAt(0)
             }
             notifyDanmaku(item)
         }

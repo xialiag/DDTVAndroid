@@ -7,6 +7,8 @@ import android.app.PendingIntent
 import android.app.Service
 import android.content.Context
 import android.content.Intent
+import android.content.pm.ServiceInfo
+import android.media.session.MediaSession
 import android.os.Build
 import android.os.IBinder
 import android.os.PowerManager
@@ -39,6 +41,7 @@ class LiveService : Service() {
     private var checkThread: Thread? = null
     private var loginCheckThread: Thread? = null
     private var wakeLock: PowerManager.WakeLock? = null
+    private var mediaSession: MediaSession? = null
 
     override fun onBind(intent: Intent?): IBinder? = null
 
@@ -48,8 +51,13 @@ class LiveService : Service() {
         createChannel()
         RoomManager.addListener(serviceRoomListener)
         RoomManager.startPolling()
+        // Android 14+: mediaPlayback 前台服务要求活跃 MediaSession，补一个空会话使其合规，
+        // 否则熄屏后系统按"伪前台"暂停导致录制中断（用户反馈安卓15熄屏被停）
+        try {
+            mediaSession = MediaSession(applicationContext, "DDTV Live").apply { setActive(true) }
+        } catch (e: Exception) { Logger.w("Service", "创建 MediaSession 失败: ${e.message}") }
         // 立即显示通知，避免 Android 12+ 未及时 startForeground 导致 ANR
-        startForeground(NOTIFICATION_ID, buildNotification())
+        startForegroundCompat()
 
         // WakeLock:无条件持有,保证息屏后 CPU 持续运行——轮询(开播检测)、录制、弹幕都依赖它
         try {
@@ -111,8 +119,18 @@ class LiveService : Service() {
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
-        startForeground(NOTIFICATION_ID, buildNotification())
+        startForegroundCompat()
         return START_STICKY // 被杀后尝试重启
+    }
+
+    /** 以 mediaPlayback 类型启动前台（带类型以配合 MediaSession，符合 Android 14+ FGS 类型校验） */
+    private fun startForegroundCompat() {
+        val notif = buildNotification()
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            startForeground(NOTIFICATION_ID, notif, ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PLAYBACK)
+        } else {
+            startForeground(NOTIFICATION_ID, notif)
+        }
     }
 
     override fun onTaskRemoved(rootIntent: Intent?) {
@@ -146,6 +164,8 @@ class LiveService : Service() {
         loginCheckThread = null
         try { wakeLock?.let { if (it.isHeld) it.release() } } catch (_: Exception) {}
         wakeLock = null
+        try { mediaSession?.release() } catch (_: Exception) {}
+        mediaSession = null
         RoomManager.removeListener(serviceRoomListener)
         RoomManager.stopPolling()
         super.onDestroy()

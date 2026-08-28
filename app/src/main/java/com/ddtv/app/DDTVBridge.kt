@@ -492,7 +492,7 @@ class DDTVBridge(private val context: Context, private val webView: WebView) {
 
     // ============ 自动更新（GitHub Releases，参照原版 ProgramUpdates） ============
 
-    private val currentVersion: String = "0.7.22"
+    private val currentVersion: String = "0.7.23"
 
     /** 解析 "v0.7.0" / "0.7.0-beta1" 为可比较数字段列表 */
     private fun versionParts(v: String): List<Long> {
@@ -696,6 +696,11 @@ class DDTVBridge(private val context: Context, private val webView: WebView) {
         return try {
             val f = java.io.File(path)
             if (!f.exists()) return """{"code":-1,"msg":"文件不存在"}"""
+            // 快速转封装仅对 FLV 有意义：mp4 输入走 remux 会“伪成功”（输出=输入路径），直接拒绝
+            if (!path.lowercase().endsWith(".flv"))
+                return """{"code":-1,"msg":"仅支持 FLV 文件的快速转封装"}"""
+            if (com.ddtv.app.core.LiveRecorder.isFileBeingRecorded(path))
+                return """{"code":-1,"msg":"该文件正在录制中，结束后才能转封装"}"""
             val t = com.ddtv.app.core.RepairTaskManager.submit(path, "remux")
             """{"code":1,"msg":"已加入任务队列","id":${t.id}}"""
         } catch (e: Exception) {

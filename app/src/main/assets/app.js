@@ -1,4 +1,4 @@
-/* ===== DDTV Android — UI 逻辑 v0.7.22 =====
+/* ===== DDTV Android — UI 逻辑 v0.7.23 =====
    结构:工具 → 图标 → 状态 → 主题 → 弹层 → 布局 → 各视图渲染 → 原生回调 → 操作 → 初始化
    模板规则:禁止内联样式(动态数据除外),一律用 app.css 里的类;图标用 ic() */
 'use strict';
@@ -1712,6 +1712,7 @@ function refreshRooms() {
   try{state.rooms=JSON.parse(AndroidBridge.getRooms());}catch(e){state.rooms=[];}
   updateStatusbar();
   if (state.view !== 'explorer') return;  // 其余视图不重建，避免闪烁
+  if (state._roomSearch) return;  // 搜索UP页：不参与列表静默刷新，避免重渲染清空输入
   if (state._detailOpen && state.currentRoom && state.rooms.find(r=>r.roomId===state.currentRoom)) {
     updateRoomDetail(state.currentRoom);  // 详情页增量更新
   } else {
@@ -1721,6 +1722,7 @@ function refreshRooms() {
 }
 /** 列表页静默刷新（不重播动画、保持滚动） */
 function updateRoomListPage() {
+  if (state._roomSearch) return;  // 搜索UP页守卫
   const body = $('#editorBody');
   const list = body.querySelector('.page-list');
   if (!list) { renderEditor(); return; }
@@ -1903,7 +1905,9 @@ function renderRoomSearch() {
     <div id="roomSearchResult" class="search-result"><div class="sb-empty">搜索 UP 名后点击结果添加直播间</div></div>
   </div>`;
   const inp = $('#roomSearchInput');
+  inp.value = state._searchKeyword || '';
   inp.focus();
+  inp.oninput = e => { state._searchKeyword = e.target.value; };
   inp.onkeydown = e => { if (e.key === 'Enter') doRoomSearch(); };
 }
 function doRoomSearch() {

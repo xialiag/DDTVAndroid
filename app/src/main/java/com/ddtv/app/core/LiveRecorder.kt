@@ -162,11 +162,12 @@ object LiveRecorder {
     }
 
     fun stop(roomId: Long) {
+        // 先断连（此时 running 仍含该房，能读到 conn），再移除并置取消标志；
+        // 原顺序先 remove 会导致 disconnect 读不到 conn，停止最长要等 readTimeout 30s 才能生效
+        LiveRecorder.disconnect(roomId)
         synchronized(running) {
             running.remove(roomId)?.cancel?.set(true)
         }
-        // 立即断开当前网络连接，打断阻塞中的读流（否则停止最长要等 readTimeout 30s）
-        LiveRecorder.disconnect(roomId)
     }
 
     fun stopAll() {

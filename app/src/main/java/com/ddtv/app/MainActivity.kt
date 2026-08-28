@@ -243,6 +243,8 @@ class MainActivity : AppCompatActivity() {
             // 录制历史（对应原版 RecEndEvent + HistoryPage）
             RoomManager.getRoom(roomId)?.let { card ->
                 RoomManager.recordHistory(card, files)
+                // 录制结束统一落盘弹幕/礼物：覆盖"手动停止录制仍在直播"场景（下播分支亦落盘，内容不丢）
+                RoomManager.saveDanmakuFile(card)
             }
             // 直播结束 → 转封装/修复（flv 优先 remux，mp4 直接 repair 修截断尾部）
             if (RoomManager.settings.remuxAfterLive) {
