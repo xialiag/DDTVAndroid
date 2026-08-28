@@ -181,21 +181,24 @@ object ListenPlayer {
         currentRoomId = 0L
     }
 
-    /** 播放/暂停切换(前端控制器点击) */
+    /** 播放/暂停切换(前端控制器点击)；暂停保留房间号,再点恢复 */
     fun toggle() {
+        val rid = currentRoomId
+        if (rid == 0L) { Logger.i("Listen", "[player] toggle 未在收听"); return }
         val p = player
-        if (p != null && p.playWhenReady) {
-            Logger.i("Listen", "[player] 点击暂停")
+        if (p != null && (p.playWhenReady || !paused)) {
+            // 播放中/缓冲中 → 暂停(保留房间号)
+            Logger.i("Listen", "[player] 点击暂停(room=$rid)")
             seq++
             releasePlayer()
-            currentRoomId = 0L
             paused = true
-            notify(0L, false, "已暂停")
-        } else {
-            paused = false
-            val rid = currentRoomId
-            if (rid != 0L) start(rid)
+            notify(rid, false, "已暂停")
+            return
         }
+        // 暂停中 → 恢复
+        Logger.i("Listen", "[player] 点击恢复(room=$rid)")
+        paused = false
+        start(rid)
     }
 
     /** 停止收听(彻底停止,在途取流作废) */

@@ -1,4 +1,4 @@
-/* ===== DDTV Android — UI 逻辑 v0.7.51 =====
+/* ===== DDTV Android — UI 逻辑 v0.7.52 =====
    结构:工具 → 图标 → 状态 → 主题 → 弹层 → 布局 → 各视图渲染 → 原生回调 → 操作 → 初始化
    模板规则:禁止内联样式(动态数据除外),一律用 app.css 里的类;图标用 ic() */
 'use strict';
@@ -1973,7 +1973,7 @@ function toggleListen(rid){
     state.listen = {active:false,playing:false,roomId:0,name:''};
     state._listenLabel = '';
     toast('已停止收听','ok');
-    if (state._detailOpen && state.currentRoom === rid) updateRoomDetail(rid);
+    if (state._detailOpen && state.currentRoom === rid) renderRoomDetail(rid);  // 全量重建,按钮立即变"听直播"
     syncListenCtl();  // 立即隐藏 tabs 控制器
     return;
   }
@@ -1982,7 +1982,7 @@ function toggleListen(rid){
   toast(res.msg, res.code<0?'err':(res.code===0?'warn':'ok'));
   if (res.code <= 0) return;  // code=0(未开播拒绝)也不设收听状态,避免"已暂停"假象+点击无效
   state.listen = {active:true, playing:false, roomId:rid, name:r.name||''};
-  if (state._detailOpen && state.currentRoom === rid) updateRoomDetail(rid);
+  if (state._detailOpen && state.currentRoom === rid) renderRoomDetail(rid);  // 全量重建,按钮立即变"停止收听"
   syncListenCtl();  // 立即刷新 tabs 控制器(开始收听后无需切页)
 }
 function initListen(){
