@@ -1,4 +1,4 @@
-/* ===== DDTV Android — UI 逻辑 v0.7.30 =====
+/* ===== DDTV Android — UI 逻辑 v0.7.31 =====
    结构:工具 → 图标 → 状态 → 主题 → 弹层 → 布局 → 各视图渲染 → 原生回调 → 操作 → 初始化
    模板规则:禁止内联样式(动态数据除外),一律用 app.css 里的类;图标用 ic() */
 'use strict';
@@ -535,10 +535,9 @@ function renderEditor() {
   else if (v === 'settings') { tabs.innerHTML = '<div class="tab active">设置</div>'; renderSettings();
   } else if (v === 'log') { tabs.innerHTML = '<div class="tab active">运行日志</div>' +
       `<button class="btn btn-sec btn-sm" style="margin-right:8px;align-self:center" onclick="renderLogFiles()">${ic('clock',12)} 历史文件</button>
-       <button class="btn btn-sec btn-sm" style="margin-right:8px;align-self:center" onclick="renderCrashLogs()">${ic('alert',12)} 崩溃日志</button>
        <button class="btn btn-sec btn-sm" style="margin-left:auto;margin-right:8px;align-self:center" onclick="saveLogsToFile()">${ic('save',12)} 保存到文件</button>`;
     body.innerHTML = `<div class="log-toolbar">
-      <span class="toolbar-text">运行日志（自动落盘保留7天；历史文件/崩溃日志点上方按钮）</span></div>
+      <span class="toolbar-text">运行日志（自动落盘保留7天；崩溃日志在设置-调试里）</span></div>
       <div class="log-panel" id="logPanel"></div>`;
     loadLogs();
   }
