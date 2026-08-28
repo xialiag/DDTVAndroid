@@ -275,7 +275,8 @@ svg{display:block;flex:0 0 auto}
 .switch-row:last-child{border-bottom:none}
 .switch-row .sw-text{flex:1 1 auto;min-width:0}
 .switch-row .sw-label{font-size:var(--fs-md);color:var(--fg-bright);font-weight:500}
-.switch-row .sw-desc{font-size:var(--fs-xs);color:var(--fg-dim);margin-top:3px;line-height:1.6}
+.switch-row .sw-desc{font-size:var(--fs-xs);color:var(--fg-dim);margin-top:3px;line-height:1.6;
+  white-space:normal;word-break:break-word;overflow-wrap:anywhere}
 .switch-row .sw-right{display:flex;align-items:center;gap:8px;flex:0 0 auto}
 .switch{position:relative;width:38px;height:21px;flex:0 0 auto;display:inline-block;cursor:pointer}
 .switch input{opacity:0;width:0;height:0}
@@ -482,6 +483,8 @@ input::placeholder{color:var(--fg-dim);opacity:.9}
   line-height:1.6;white-space:pre-wrap;word-break:break-all;color:var(--fg-dim);
   background:var(--bg-input);border-top:1px solid var(--border-light);max-height:340px;overflow-y:auto}
 .crash-item.open .crash-body{display:block}
+.faq-item .crash-name{color:var(--fg-bright)}
+.faq-item .crash-body{font-family:unset;font-size:var(--fs-sm);line-height:1.75;max-height:none}
 
 /* --- 关注列表（账号页下方） --- */
 .live-up-label{font-size:var(--fs-xs);font-weight:600;color:var(--fg-title);letter-spacing:.06em;
