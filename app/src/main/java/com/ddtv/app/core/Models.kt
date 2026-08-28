@@ -31,6 +31,7 @@ data class AppSettings(
     var keepScreenOn: Boolean = false,   // 屏幕常亮(设置页开关,FLAG_KEEP_SCREEN_ON)
     var updateRepo: String = "xialiag/DDTVAndroid",  // 自动更新源 GitHub owner/repo(空=不检查)
     var autoUpdate: Boolean = false,      // 启动时静默检查更新
+    var autoStart: Boolean = true,       // 开机自启:重启后自动恢复直播监控前台服务
 ) {
     fun toJson(): JSONObject = JSONObject().apply {
         put("pollInterval", pollInterval)
@@ -53,6 +54,7 @@ data class AppSettings(
         put("keepScreenOn", keepScreenOn)
         put("updateRepo", updateRepo)
         put("autoUpdate", autoUpdate)
+        put("autoStart", autoStart)
     }
 }
 
