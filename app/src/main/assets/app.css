@@ -789,6 +789,9 @@ input::placeholder{color:var(--fg-dim);opacity:.9}
 /* ===== 9. 工具类（模板复用，禁止内联样式） ===== */
 .btn-row.center{justify-content:center}
 .btn-row.tight{margin:0 0 6px}
+/* 房间详情操作：grid 网格等宽，换行后每行对齐整齐、不出现单个撑满 */
+.detail-actions{display:grid;grid-template-columns:repeat(auto-fill,minmax(96px,1fr));gap:8px}
+.detail-actions .btn{width:100%;min-width:0;white-space:nowrap;padding:0 8px}
 .inline-btns{display:flex;gap:8px}
 .txt-accent{color:var(--accent-ink)}
 .txt-error{color:var(--error)}
