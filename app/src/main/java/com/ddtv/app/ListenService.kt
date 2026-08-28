@@ -154,13 +154,32 @@ class ListenService : Service() {
                     info = BiliLiveApi.getStreamInfo(roomId, qn = qn, audioOnly = false)
                 }
                 if (info == null) { finishError(roomId, "获取直播流失败"); return@Thread }
-                val hlsUrl = info.hlsUrl
-                val flvUrl = info.flvUrl
-                if (hlsUrl.isEmpty() && flvUrl.isEmpty()) { finishError(roomId, "该直播暂无可用线路"); return@Thread }
-                // B站直播 FLV(http-stream) 是 ExoPlayer 最稳路径（HLS fmp4 直播常见 Source error）→ 默认 FLV 优先，HLS 兜底
-                // 但该房间正在录制时优先用 HLS（录制默认 FLV，两者走不同协议/线路，避免同一直播间并发取流被 B 站限流导致 403/无反应）
-                val useFlv = flvUrl.isNotEmpty() && (!LiveRecorder.isRecordingRoom(roomId) || hlsUrl.isEmpty())
-                val (url, isHls) = if (useFlv) flvUrl to false else hlsUrl to true
+                if (info.hlsUrl.isEmpty() && info.flvUrl.isEmpty()) { finishError(roomId, "该直播暂无可用线路"); return@Thread }
+                // 按 CDN host 真实错开：录制中选一条与录制当前线路**不同 host** 的线路
+                // (优先 HLS，其次不同 host 的 FLV)，避免同一直播间同节点并发取流被 B 站限流(403/无反应)
+                val recHost = if (LiveRecorder.isRecordingRoom(roomId)) LiveRecorder.currentStreamHost(roomId) else null
+                fun hostOf(u: String): String? = Regex("""^https?://([^/]+)""").find(u)?.groupValues?.get(1)
+                fun pickLine(lines: List<String>, exclude: String?): String? =
+                    lines.firstOrNull { hostOf(it) != exclude } ?: lines.firstOrNull()
+                val hls = pickLine(info.hlsLines, recHost)
+                val flv = pickLine(info.flvLines, recHost)
+                val url: String
+                val isHls: Boolean
+                if (recHost != null) {
+                    // 录制中：选与录制不同 host 的线路(无则用任意线路兜底)，尽量错开 CDN 节点
+                    when {
+                        hls != null -> { url = hls; isHls = true }
+                        flv != null -> { url = flv; isHls = false }
+                        else -> { finishError(roomId, "该直播暂无可用线路"); return@Thread }
+                    }
+                } else {
+                    // 未录制：FLV 优先(ExoPlayer 最稳),HLS 兜底
+                    when {
+                        info.flvUrl.isNotEmpty() -> { url = info.flvUrl; isHls = false }
+                        hls != null -> { url = hls; isHls = true }
+                        else -> { finishError(roomId, "该直播暂无可用线路"); return@Thread }
+                    }
+                }
                 Logger.i("Listen", "room=$roomId 播放 ${if (isHls) "HLS" else "FLV"}: ${url.take(120)}")
                 mainHandler.post { prepareAndPlay(roomId, url, isHls) }
             } catch (e: Exception) {

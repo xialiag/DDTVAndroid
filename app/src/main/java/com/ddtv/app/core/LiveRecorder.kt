@@ -106,6 +106,14 @@ object LiveRecorder {
         @Volatile var conn: HttpURLConnection? = null
         /** 断流重试计数（跨分段累计，避免每次分段重置导致无限重连） */
         @Volatile var retryCount = 0
+        /** 当前录制线路 URL（Listen 听直播据此选不同 CDN host 错开，避免同节点并发取流） */
+        @Volatile var streamUrl: String = ""
+    }
+
+    /** 当前录制线路的 CDN host（听直播选线用）；未录制返回 null */
+    fun currentStreamHost(roomId: Long): String? {
+        val u = synchronized(running) { running[roomId]?.streamUrl } ?: return null
+        return Regex("""^https?://([^/]+)""").find(u)?.groupValues?.get(1)?.takeIf { it.isNotEmpty() }
     }
 
     fun isRecording(roomId: Long): Boolean = running.containsKey(roomId)
@@ -624,6 +632,7 @@ object LiveRecorder {
 
     /** @return "retry"/"retry_exhausted"/"live_ended"/"cut"/null(无流) */
     private fun flvSegment(task: RecTask, card: RoomCard, flvUrl: String, pcdn: Boolean = false): String? {
+        task.streamUrl = flvUrl  // 记录当前线路(换线重调时更新),供 Listen 听直播选不同 host 错开
         val roomId = card.roomId
         val file = newSegmentFile(card, "flv")
         card.recFile = file
