@@ -164,6 +164,8 @@ class MainActivity : AppCompatActivity() {
         com.ddtv.app.core.LiveRecorder.extractPendingAudioFiles()
         // 补转封装：意外退出/中断残留的 flv(应转 mp4 未转)，后台静默补转
         com.ddtv.app.core.LiveRecorder.remuxPendingFlvs()
+        // 补弹幕存档：异常退出残留的实时流水 jsonl(无正式 .json)读回生成存档
+        com.ddtv.app.core.RoomManager.recoverDanmakuJsonl()
 
         // 启动时打印 ffmpeg 引擎版本（调试日志：确认打包的是 v8 还是 v6）
         // 进程级只打一次：Activity 被系统重建(onCreate 重跑)时不再重复刷日志
