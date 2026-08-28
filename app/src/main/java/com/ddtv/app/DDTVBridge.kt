@@ -441,6 +441,7 @@ class DDTVBridge(private val context: Context, private val webView: WebView) {
             put("autoUpdate", s.autoUpdate)
             put("autoStart", s.autoStart)
             put("danmakuSrt", s.danmakuSrt)
+            put("danmakuSubFormat", s.danmakuSubFormat)
             put("outputDir", RoomManager.outputDir.absolutePath)
             put("version", com.ddtv.app.BuildConfig.VERSION_NAME)
         }.toString()
@@ -470,6 +471,7 @@ class DDTVBridge(private val context: Context, private val webView: WebView) {
                 autoUpdate = o.optBoolean("autoUpdate", autoUpdate)
                 autoStart = o.optBoolean("autoStart", autoStart)
                 danmakuSrt = o.optBoolean("danmakuSrt", danmakuSrt)
+                danmakuSubFormat = o.optString("danmakuSubFormat", danmakuSubFormat).let { if (it == "ass" || it == "srt") it else "srt" }
             }
             RoomManager.saveSettings()
             com.ddtv.app.core.LiveRecorder.applySettings(RoomManager.settings)
@@ -496,7 +498,7 @@ class DDTVBridge(private val context: Context, private val webView: WebView) {
 
     // ============ 自动更新（GitHub Releases，参照原版 ProgramUpdates） ============
 
-    private val currentVersion: String = "0.7.27"
+    private val currentVersion: String = "0.7.28"
 
     /** 解析 "v0.7.0" / "0.7.0-beta1" 为可比较数字段列表 */
     private fun versionParts(v: String): List<Long> {
@@ -1231,9 +1233,9 @@ class DDTVBridge(private val context: Context, private val webView: WebView) {
 
     /** 为录像文件生成同名 .srt 字幕（关联同目录弹幕 json，工具页用） */
     @JavascriptInterface
-    fun exportDanmakuSrt(path: String): String {
+    fun exportDanmakuSrt(path: String, format: String?): String {
         return try {
-            com.ddtv.app.core.DanmakuExport.exportForVideo(path)
+            com.ddtv.app.core.DanmakuExport.exportForVideo(path, format)
         } catch (e: Exception) {
             """{"code":-1,"msg":"生成字幕失败: ${e.message}"}"""
         }
