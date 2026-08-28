@@ -155,30 +155,23 @@ class ListenService : Service() {
                 }
                 if (info == null) { finishError(roomId, "获取直播流失败"); return@Thread }
                 if (info.hlsUrl.isEmpty() && info.flvUrl.isEmpty()) { finishError(roomId, "该直播暂无可用线路"); return@Thread }
-                // 按 CDN host 真实错开：录制中选一条与录制当前线路**不同 host** 的线路
-                // (优先 HLS，其次不同 host 的 FLV)，避免同一直播间同节点并发取流被 B 站限流(403/无反应)
+                // 错开只做"不同 CDN host 的 FLV"：ExoPlayer 对 B 站 HLS fmp4 直播兼容差(Source error 常见)，
+                // 一律 FLV 优先；录制中优先选与录制当前线路不同 host 的 FLV 错开节点，HLS 仅兜底
                 val recHost = if (LiveRecorder.isRecordingRoom(roomId)) LiveRecorder.currentStreamHost(roomId) else null
                 fun hostOf(u: String): String? = Regex("""^https?://([^/]+)""").find(u)?.groupValues?.get(1)
                 fun pickLine(lines: List<String>, exclude: String?): String? =
                     lines.firstOrNull { hostOf(it) != exclude } ?: lines.firstOrNull()
-                val hls = pickLine(info.hlsLines, recHost)
                 val flv = pickLine(info.flvLines, recHost)
+                val hls = pickLine(info.hlsLines, recHost)
                 val url: String
                 val isHls: Boolean
-                if (recHost != null) {
-                    // 录制中：选与录制不同 host 的线路(无则用任意线路兜底)，尽量错开 CDN 节点
-                    when {
-                        hls != null -> { url = hls; isHls = true }
-                        flv != null -> { url = flv; isHls = false }
-                        else -> { finishError(roomId, "该直播暂无可用线路"); return@Thread }
-                    }
+                if (flv != null) {
+                    // FLV 恒优先(录制时 pickLine 已优先不同 host 的 FLV 错开节点);ExoPlayer 最稳
+                    url = flv; isHls = false
+                } else if (hls != null) {
+                    url = hls; isHls = true
                 } else {
-                    // 未录制：FLV 优先(ExoPlayer 最稳),HLS 兜底
-                    when {
-                        info.flvUrl.isNotEmpty() -> { url = info.flvUrl; isHls = false }
-                        hls != null -> { url = hls; isHls = true }
-                        else -> { finishError(roomId, "该直播暂无可用线路"); return@Thread }
-                    }
+                    finishError(roomId, "该直播暂无可用线路"); return@Thread
                 }
                 Logger.i("Listen", "room=$roomId 播放 ${if (isHls) "HLS" else "FLV"}: ${url.take(120)}")
                 mainHandler.post { prepareAndPlay(roomId, url, isHls) }
