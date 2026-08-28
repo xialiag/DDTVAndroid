@@ -1,4 +1,4 @@
-/* ===== DDTV Android — UI 逻辑 v0.7.57 =====
+/* ===== DDTV Android — UI 逻辑 v0.7.58 =====
    结构:工具 → 图标 → 状态 → 主题 → 弹层 → 布局 → 各视图渲染 → 原生回调 → 操作 → 初始化
    模板规则:禁止内联样式(动态数据除外),一律用 app.css 里的类;图标用 ic() */
 'use strict';
@@ -1414,8 +1414,8 @@ function renderSettings() {
       <label class="switch"><input type="checkbox" id="setDanmakuSrt" onchange="saveSettings()"><span class="slider"></span></label></div>
     <div class="switch-row"><div class="sw-text"><div class="sw-label">字幕格式</div><div class="sw-desc">SRT 通用兼容;ASS 带样式/颜色,弹幕居中叠加更接近原味</div></div>
       <div class="sw-right"><div id="setSubFormat"></div></div></div>
-    <div class="switch-row"><div class="sw-text"><div class="sw-label">ASS 字幕样式</div><div class="sw-desc">滚动速度/字号/轨道/昵称/内容/颜色/字体,点开弹窗调整</div></div>
-      <div class="sw-right"><button class="btn btn-sec btn-sm" onclick="openSubSettings()">弹窗设置</button></div></div>
+    <div class="switch-row"><div class="sw-text"><div class="sw-label">ASS 字幕样式</div><div class="sw-desc">滚动速度/字号/轨道/昵称/内容/颜色/字体,点开调整</div></div>
+      <div class="sw-right"><button class="btn btn-sec btn-sm" onclick="openSubSettings()">设置</button></div></div>
     <div class="switch-row"><div class="sw-text"><div class="sw-label">修复后删除源文件</div><div class="sw-desc">修复/转码成功后删除原始文件</div></div>
       <label class="switch"><input type="checkbox" id="setRepDel" onchange="saveSettings()"><span class="slider"></span></label></div>
     <h2>账号</h2>
@@ -1462,7 +1462,7 @@ function renderSettings() {
       <label class="switch"><input type="checkbox" id="setAutoUpdate" onchange="saveSettings()"><span class="slider"></span></label></div>
     <div class="btn-row tight"><button class="btn btn-sec btn-sm" onclick="checkUpdateNow()">${ic('refresh',12)} 检查更新</button>
       <span class="toolbar-text">当前版本 ${esc(state.version||'')}</span></div>
-    <div class="btn-row tight"><button class="btn btn-sec btn-sm" onclick="renderFaq()">${ic('alert',12)} 常见问题</button></div></div>`;
+    <div class="btn-row"><button class="btn btn-sec btn-sm" onclick="renderFaq()">${ic('alert',12)} 常见问题</button></div></div>`;
   // 自定义下拉(替代原生 select)
   renderCSelect($('#setPoll'),
     [{v:'5',label:'5 秒'},{v:'10',label:'10 秒'},{v:'15',label:'15 秒'},{v:'30',label:'30 秒'},{v:'60',label:'60 秒'}],
