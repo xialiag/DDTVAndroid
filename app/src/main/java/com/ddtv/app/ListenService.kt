@@ -26,6 +26,7 @@ import androidx.media3.exoplayer.source.ProgressiveMediaSource
 import com.ddtv.app.core.BiliLiveApi
 import com.ddtv.app.core.Http
 import com.ddtv.app.core.LiveRecorder
+import com.ddtv.app.core.LiveStreamProxy
 import com.ddtv.app.core.Logger
 import com.ddtv.app.core.RoomManager
 
@@ -140,6 +141,15 @@ class ListenService : Service() {
 
         // 跟随房间清晰度设置（RoomCard.quality，默认原画）
         val qn = RoomManager.getRoom(roomId)?.quality ?: 150
+
+        // 边录边播：该房间正在录制 → 直接用本地流代理(录制流已读到的字节)，不再单独 B 站取流，避免并发取流 403/无反应
+        if (LiveRecorder.isRecordingRoom(roomId)) {
+            LiveStreamProxy.ensureServer()
+            val url = "http://127.0.0.1:${LiveStreamProxy.PORT}/live?room=$roomId&t=${System.currentTimeMillis()}"
+            Logger.i("Listen", "room=$roomId 边录边播(本地代理流): $url")
+            mainHandler.post { prepareAndPlay(roomId, url, false) }
+            return
+        }
 
         // 取流（网络）在子线程，完成后主线程构建播放器
         Thread({

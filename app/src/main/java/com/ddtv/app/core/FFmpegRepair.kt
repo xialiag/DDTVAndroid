@@ -50,6 +50,24 @@ object FFmpegRepair {
     }
 
     /**
+     * 校验 FLV 是否**可正常解码**(播放性)。录制中断/截断/流损坏的文件 ffmpeg 会在
+     * `-v error` 输出里报错(illegal/Invalid/Error at MB 等)。注意 ffmpeg 对部分解码错误
+     * 仍返回退出码 0,所以不能只看 rc,必须以输出里的错误行为准。
+     */
+    fun isPlayable(path: String): Boolean {
+        val f = File(path)
+        if (!f.exists() || f.length() < 13) return false
+        return try {
+            val session = com.arthenica.ffmpegkit.FFmpegKit.execute("-v error -i \"$path\" -map 0 -f null -")
+            val log = session.allLogsAsString ?: ""
+            session.returnCode.value == 0 &&
+                !(log.contains("rror") || log.contains("Invalid") || log.contains("illegal") || log.contains("Error at"))
+        } catch (e: Exception) {
+            false
+        }
+    }
+
+    /**
      * 异步可取消修复（任务系统用）：结果经 onDone(output, error) 回调（任意线程）
      */
     fun repairAsync(input: String, mode: String, taskId: Long, onDone: (String?, String) -> Unit) {
