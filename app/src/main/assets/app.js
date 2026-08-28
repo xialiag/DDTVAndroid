@@ -1,4 +1,4 @@
-/* ===== DDTV Android — UI 逻辑 v0.7.39 =====
+/* ===== DDTV Android — UI 逻辑 v0.7.40 =====
    结构:工具 → 图标 → 状态 → 主题 → 弹层 → 布局 → 各视图渲染 → 原生回调 → 操作 → 初始化
    模板规则:禁止内联样式(动态数据除外),一律用 app.css 里的类;图标用 ic() */
 'use strict';
@@ -2004,11 +2004,23 @@ function syncListenCtl() {
     bar.appendChild(ctl);
   }
   const playing = state.listen.playing;
-  ctl.innerHTML = `<span class="lc-dot${playing?' on':''}"></span>${playing?'播放中':'已暂停'}`;
+  // 显示服务侧推送的状态标签(缓冲中…/已暂停/播放出错…)，比简单按 playing 布尔显示更准确
+  const label = state._listenLabel || (playing ? '播放中' : '已暂停');
+  ctl.innerHTML = `<span class="lc-dot${playing?' on':''}"></span>${label}`;
   ctl.title = playing ? '点击暂停' : '点击继续';
 }
 function togglePause() {
-  try { AndroidBridge.toggleListenPlay(); } catch(e){}
+  try {
+    const s = JSON.parse(AndroidBridge.getListenStatus());
+    if (s && !s.active) {
+      // 收听服务已停止(播放出错/直播结束)，点击改为重新开始收听，避免"点了没反应"
+      const rid = state.listen && state.listen.roomId;
+      toast('重新连接…','ok');
+      try { JSON.parse(AndroidBridge.startListen(rid||0)); } catch(e){ toast('启动失败:'+e,'err'); }
+      return;
+    }
+    AndroidBridge.toggleListenPlay();
+  } catch(e){}
 }
 function setDanmaku(rid,on) { AndroidBridge.setDanmakuOpen(rid,on); }
 function setAudioOnlyRoom(rid,on) {
