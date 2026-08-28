@@ -34,6 +34,13 @@ data class AppSettings(
     var autoStart: Boolean = true,       // 开机自启:重启后自动恢复直播监控前台服务
     var danmakuSrt: Boolean = false,     // 录制结束后自动生成弹幕字幕
     var danmakuSubFormat: String = "srt",  // 结束自动字幕格式: srt|ass
+    var subSpeed: String = "normal",     // ASS弹幕滚动速度: slow|normal|fast
+    var subFontSize: Int = 26,           // 字幕字号(22/26/30)
+    var subTracks: Int = 6,              // 弹幕轨道数(4/6/8)
+    var subShowName: Boolean = true,     // 字幕显示昵称
+    var subContentAll: Boolean = true,   // 全部内容(弹幕+礼物+SC+上舰);false=仅普通弹幕
+    var subWhiteColor: Boolean = false,  // 统一白色;false=跟随B站原色
+    var subFont: String = "",            // 自定义字体(空=默认 Microsoft YaHei)
 ) {
     fun toJson(): JSONObject = JSONObject().apply {
         put("pollInterval", pollInterval)
@@ -59,6 +66,13 @@ data class AppSettings(
         put("autoStart", autoStart)
         put("danmakuSrt", danmakuSrt)
         put("danmakuSubFormat", danmakuSubFormat)
+        put("subSpeed", subSpeed)
+        put("subFontSize", subFontSize)
+        put("subTracks", subTracks)
+        put("subShowName", subShowName)
+        put("subContentAll", subContentAll)
+        put("subWhiteColor", subWhiteColor)
+        put("subFont", subFont)
     }
 }
 

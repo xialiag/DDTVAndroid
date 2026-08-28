@@ -269,6 +269,20 @@ svg{display:block;flex:0 0 auto}
 .btn:disabled:not(.btn-primary){opacity:.5}
 .btn:focus-visible{outline:none;box-shadow:var(--ring)}
 
+/* --- 设置页(页签+卡片+分段) --- */
+.set-tabs{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:14px;padding:0 2px}
+.set-tab{background:transparent;border:1px solid var(--border-light);color:var(--fg-dim);
+  border-radius:var(--r-md);padding:7px 14px;font-size:var(--fs-sm);cursor:pointer}
+.set-tab.active{background:var(--accent);border-color:var(--accent);color:#fff;font-weight:600}
+.set-card{background:var(--card-bg);border:1px solid var(--border-light);border-radius:var(--r-lg);
+  padding:4px 14px 10px;margin-bottom:14px}
+.set-card-title{font-size:var(--fs-sm);font-weight:600;color:var(--fg-title);letter-spacing:.04em;
+  padding:10px 0 2px;border-bottom:1px solid var(--border);margin-bottom:2px}
+.set-panel{max-width:720px}
+.seg{display:inline-flex;gap:4px;background:var(--bg-input);border-radius:var(--r-pill);padding:3px}
+.seg-btn{border:none;background:transparent;color:var(--fg-dim);font-size:var(--fs-sm);
+  padding:5px 12px;border-radius:var(--r-pill);cursor:pointer;white-space:nowrap}
+.seg-btn.on{background:var(--accent);color:#fff;font-weight:600}
 /* --- 开关 --- */
 .switch-row{display:flex;align-items:center;justify-content:space-between;gap:16px;padding:12px 0;
   border-bottom:1px solid var(--border)}

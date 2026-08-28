@@ -162,6 +162,7 @@ document.addEventListener('click', e => {
   });
 });
 function renderCSelect(el, options, value, onChange) {
+  if (!el) return;  // 元素不在当前渲染的页签时跳过(设置页分部渲染)
   el.classList.add('cselect');
   el.innerHTML = `<button type="button" class="cs-btn"><span class="cs-label"></span>
     <svg class="cs-chev" viewBox="0 0 24 24"><path fill="currentColor" d="M7 10l5 5 5-5z"/></svg></button>
@@ -1386,121 +1387,167 @@ function renderQrcode(evt) {
 }
 
 /* ========== 设置 ========== */
+/* ========== 设置(重构:页签+卡片+折叠,字段与桥不变) ========== */
+const SETTINGS_TABS = [
+  { id: 'common', label: '常用' }, { id: 'record', label: '录制' },
+  { id: 'content', label: '内容' }, { id: 'subtitle', label: '字幕' },
+  { id: 'keep', label: '保活' }, { id: 'about', label: '关于' }
+];
+let _setTab = 'common';
+
 function renderSettings() {
-  const s=state.settings, body=$('#editorBody');
-  body.innerHTML=`<div class="view">
-    <div class="btn-row tight"><button class="btn btn-sec btn-sm" onclick="renderFaq()">${ic('alert',12)} 常见问题(保活/字幕/日志)</button></div>
-    <h2>监控</h2>
-    <div class="switch-row"><div class="sw-text"><div class="sw-label">轮询间隔</div><div class="sw-desc">检测开播状态的频率</div></div>
-      <div class="sw-right"><div id="setPoll"></div></div></div>
-    <h2>录制</h2>
-    <div class="switch-row"><div class="sw-text"><div class="sw-label">默认自动录制</div><div class="sw-desc">新添加房间默认开播自动录制</div></div>
-      <label class="switch"><input type="checkbox" id="setAuto" onchange="saveSettings()"><span class="slider"></span></label></div>
-    <div class="switch-row"><div class="sw-text"><div class="sw-label">录制模式</div><div class="sw-desc">FLV 直录(时间轴天然正确);HLS=分片续传更稳</div></div>
-      <div class="sw-right"><div id="setMode"></div></div></div>
-    <div class="switch-row"><div class="sw-text"><div class="sw-label">FLV 断流续录</div><div class="sw-desc">断流重连后继续写同一文件;关=断流切新文件</div></div>
-      <label class="switch"><input type="checkbox" id="setAppend" onchange="saveSettings()"><span class="slider"></span></label></div>
-    <div class="switch-row"><div class="sw-text"><div class="sw-label">默认清晰度</div></div>
-      <div class="sw-right"><div id="setQn"></div></div></div>
-    <div class="switch-row"><div class="sw-text"><div class="sw-label">标题变化分割</div><div class="sw-desc">直播间改标题时切分文件</div></div>
-      <label class="switch"><input type="checkbox" id="setSplitTitle" onchange="saveSettings()"><span class="slider"></span></label></div>
-    <div class="switch-row"><div class="sw-text"><div class="sw-label">按时长分割</div><div class="sw-desc">0 = 不分割（小时）</div></div>
-      <input type="number" id="setSplitH" class="sw-input-num" min="0" max="24" value="0" onchange="saveSettings()"></div>
-    <div class="switch-row"><div class="sw-text"><div class="sw-label">按大小分割</div><div class="sw-desc">0 = 不分割（GB）</div></div>
-      <input type="number" id="setSplitG" class="sw-input-num" min="0" max="100" value="0" onchange="saveSettings()"></div>
-    <div class="switch-row"><div class="sw-text"><div class="sw-label">自动转封装 MP4</div><div class="sw-desc">结束后自动 ffmpeg 转封装</div></div>
-      <label class="switch"><input type="checkbox" id="setRemux" onchange="saveSettings()"><span class="slider"></span></label></div>
-    <div class="switch-row"><div class="sw-text"><div class="sw-label">结束后自动生成字幕</div><div class="sw-desc">录制结束把弹幕/礼物/SC 转成字幕(与弹幕 json 同名)</div></div>
-      <label class="switch"><input type="checkbox" id="setDanmakuSrt" onchange="saveSettings()"><span class="slider"></span></label></div>
-    <div class="switch-row"><div class="sw-text"><div class="sw-label">字幕格式</div><div class="sw-desc">SRT 字幕;ASS 静态字幕;ASS 弹幕(滚动飞过,最像原版)</div></div>
-      <div class="sw-right"><div id="setSubFormat"></div></div></div>
-    <div class="switch-row"><div class="sw-text"><div class="sw-label">修复后删除源文件</div><div class="sw-desc">修复/转码成功后删除原始文件</div></div>
-      <label class="switch"><input type="checkbox" id="setRepDel" onchange="saveSettings()"><span class="slider"></span></label></div>
-    <h2>账号</h2>
-    <div class="switch-row"><div class="sw-text"><div class="sw-label">小心心挂机</div><div class="sw-desc">上报观看时长，需登录</div></div>
-      <label class="switch"><input type="checkbox" id="setHeart" onchange="saveSettings()"><span class="slider"></span></label></div>
-    <h2>通知</h2>
-    <div class="switch-row"><div class="sw-text"><div class="sw-label">开播/下播提醒</div><div class="sw-desc">全局开关，房间详情可单独关闭</div></div>
-      <label class="switch"><input type="checkbox" id="setRemind" onchange="saveSettings()"><span class="slider"></span></label></div>
-    <h2>弹幕</h2>
-    <div class="switch-row"><div class="sw-text"><div class="sw-label">弹幕屏蔽词</div><div class="sw-desc">用 | 分隔，如：广告|代购</div></div>
-      <input type="text" id="setBlock" class="sw-input-txt" placeholder="广告|代购" onchange="saveSettings()"></div>
-    <h2>录制文件</h2>
-    <div class="switch-row"><div class="sw-text"><div class="sw-label">文件名格式</div><div class="sw-desc">空=默认;关键字 {ROOMID} {NAME} {TITLE} {DATE} {TIME} {YYYY} {MM} {DD} {HH} {mm} {SS} {FFF}</div></div>
-      <input type="text" id="setFmt" class="sw-input-txt" placeholder="{DATE}_{TIME}_{TITLE}" onchange="saveSettings()"></div>
-    <h2>录制目录</h2>
-    <div class="switch-row">
-      <div class="sw-text"><div class="sw-label">录制目录</div><div class="sw-desc">录制的保存位置（绝对路径）</div></div>
-      <input type="text" id="setOutputDir" class="sw-input-txt" placeholder="/storage/emulated/0/DDTV/rec" onchange="saveOutputDir()"></div>
-    <div class="mono-block" id="outputDirText">${esc(s?s.outputDir:'')}</div>
-    <h2>权限</h2>
-    <div class="switch-row"><div class="sw-text"><div class="sw-label">通知权限</div><div class="sw-desc">开播/下播提醒推送</div></div>
-      <div class="sw-right"><span class="perm-state" id="permNotification">…</span>
-      <button class="btn btn-sec btn-sm" onclick="requestPerm('notification')">授权</button></div></div>
-    <div class="switch-row"><div class="sw-text"><div class="sw-label">存储权限</div><div class="sw-desc">所有文件访问(自定义录制目录需要)</div></div>
-      <div class="sw-right"><span class="perm-state" id="permStorage">…</span>
-      <button class="btn btn-sec btn-sm" onclick="requestPerm('storage')">授权</button></div></div>
-    <div class="switch-row"><div class="sw-text"><div class="sw-label">电池优化白名单</div><div class="sw-desc">后台持续录制不被系统休眠</div></div>
-      <div class="sw-right"><span class="perm-state" id="permBattery">…</span>
-      <button class="btn btn-sec btn-sm" onclick="requestPerm('battery')">授权</button></div></div>
-    <h2>保活</h2>
-    <div class="switch-row"><div class="sw-text"><div class="sw-label">开机自启</div><div class="sw-desc">手机重启后自动恢复直播监控后台服务</div></div>
-      <label class="switch"><input type="checkbox" id="setAutoStart" onchange="saveSettings()"><span class="slider"></span></label></div>
-    <div class="switch-row"><div class="sw-text"><div class="sw-label">屏幕常亮</div><div class="sw-desc">保持屏幕常亮,方便查看录制/弹幕状态</div></div>
-      <label class="switch"><input type="checkbox" id="setKeepScreen" onchange="saveSettings()"><span class="slider"></span></label></div>
-    <div class="switch-row"><div class="sw-text"><div class="sw-label">后台保活设置</div><div class="sw-desc">系统应用信息页允许自启动/后台运行,详见「常见问题」</div></div>
-      <div class="sw-right"><button class="btn btn-sec btn-sm" onclick="openAppBackgroundSettings()">去设置</button></div></div>
-    <div class="switch-row"><div class="sw-text"><div class="sw-label">后台任务锁定</div><div class="sw-desc">在最近任务中锁定本应用，防止系统清理后台时终止录制</div></div></div>
-    <h2>调试</h2>
-    <div class="switch-row"><div class="sw-text"><div class="sw-label">调试服务器</div><div class="sw-desc">局域网可查看运行状态与日志，默认关闭</div></div>
-      <label class="switch"><input type="checkbox" id="setDebug" onchange="toggleDebugServer()"><span class="slider"></span></label></div>
-    <div class="btn-row tight"><button class="btn btn-sec btn-sm" onclick="renderCrashLogs()">${ic('alert',12)} 崩溃日志</button></div>
-    <h2>更新</h2>
-    <div class="switch-row"><div class="sw-text"><div class="sw-label">启动时检查更新</div><div class="sw-desc">启动后静默检查，发现新版本才提示</div></div>
-      <label class="switch"><input type="checkbox" id="setAutoUpdate" onchange="saveSettings()"><span class="slider"></span></label></div>
-    <div class="btn-row tight"><button class="btn btn-sec btn-sm" onclick="checkUpdateNow()">${ic('refresh',12)} 检查更新</button>
-      <span class="toolbar-text">当前版本 ${esc(state.version||'')}</span></div></div>`;
-  // 自定义下拉(替代原生 select)
-  renderCSelect($('#setPoll'),
-    [{v:'5',label:'5 秒'},{v:'10',label:'10 秒'},{v:'15',label:'15 秒'},{v:'30',label:'30 秒'},{v:'60',label:'60 秒'}],
-    String(s?s.pollInterval:15), ()=>saveSettings());
-  renderCSelect($('#setQn'),
-    Object.entries(qnLabels).map(([k,v])=>({v:k,label:v})),
-    String(s?s.quality:10000), ()=>saveSettings());
-  renderCSelect($('#setMode'),
-    [{v:'flv',label:'FLV 直录'},{v:'hls',label:'HLS'},{v:'auto',label:'自动（有 HLS 用 HLS）'}],
-    String(s?s.recordMode||'flv':'flv'), ()=>saveSettings());
-  renderCSelect($('#setSubFormat'),
-    [{v:'srt',label:'SRT 字幕'},{v:'ass',label:'ASS 字幕'},{v:'assdm',label:'ASS 弹幕(滚动)'}],
-    String(s?s.danmakuSubFormat||'srt':'srt'), ()=>saveSettings());
-  if(s) { $('#setAuto').checked=s.autoRecord;
-    $('#setAppend').checked=s.flvAppendOnReconnect!==false;
-    $('#setSplitTitle').checked=s.splitByTitle; $('#setSplitH').value=s.splitSeconds?Math.round(s.splitSeconds/3600):0;
-    $('#setSplitG').value=s.splitSizeMB?Math.round(s.splitSizeMB/1024):0; $('#setRemux').checked=s.remuxAfterLive; $('#setRepDel').checked=s.repairDeleteSource!==false; $('#setHeart').checked=s.watchHeartbeat;
-    $('#setRemind').checked=s.remindLive; $('#setBlock').value=s.blockBarrage||''; $('#setFmt').value=s.fileNameFormat||'';
-    $('#setAutoUpdate').checked=!!s.autoUpdate;
-    $('#setDebug').checked=!!s.debugServer;
-    $('#setKeepScreen').checked=!!s.keepScreenOn;
-    $('#setAutoStart').checked=!!s.autoStart;
-    $('#setDanmakuSrt').checked=!!s.danmakuSrt;
-    $('#setOutputDir').value=s.outputDir||''; }
+  const s = state.settings, body = $('#editorBody');
+  const tabsHtml = SETTINGS_TABS.map(t => `<button class="set-tab${_setTab===t.id?' active':''}" onclick="switchSettingsTab('${t.id}')">${t.label}</button>`).join('');
+  body.innerHTML = `<div class="view"><div class="set-tabs">${tabsHtml}</div><div id="setPanel" class="set-panel"></div></div>`;
+  renderSettingsPanel();
+  initSettingsControls(state.settings);
+}
+function switchSettingsTab(id) { _setTab = id; renderSettings(); }
+
+/* 分段按钮组(字幕页用,紧凑取代下拉) */
+function segHtml(id, val, opts) {
+  return `<div class="seg" id="${id}">${opts.map(o => `<button class="seg-btn${String(val)===String(o.v)?' on':''}" data-v="${o.v}" onclick="segPick('${id}',this)">${o.label}</button>`).join('')}</div>`;
+}
+function segPick(id, btn) {
+  const all = document.querySelectorAll('#'+id+' .seg-btn');
+  all.forEach(b => b.classList.remove('on'));
+  btn.classList.add('on');
+  saveSettings();
+}
+function segVal(id) {
+  const el = document.getElementById(id); if (!el) return '';
+  const b = el.querySelector('.seg-btn.on'); return b ? b.dataset.v : '';
+}
+
+function renderSettingsPanel() {
+  const s = state.settings || {};
+  const panel = $('#setPanel'); if (!panel) return;
+  const card = title => `<div class="set-card"><div class="set-card-title">${title}</div>`;
+  const row = (label, desc, ctl) => `<div class="switch-row"><div class="sw-text"><div class="sw-label">${label}</div>${desc?`<div class="sw-desc">${desc}</div>`:''}</div><div class="sw-right">${ctl}</div></div>`;
+  const ck = id => `<label class="switch"><input type="checkbox" id="${id}" onchange="saveSettings()"><span class="slider"></span></label>`;
+  const num = (id, min, max) => `<input type="number" id="${id}" class="sw-input-num" min="${min}" max="${max}" value="0" onchange="saveSettings()">`;
+  const txt = (id, ph) => `<input type="text" id="${id}" class="sw-input-txt" placeholder="${ph}" onchange="saveSettings()">`;
+  const selBox = id => `<div id="${id}"></div>`;
+  let html = '';
+  if (_setTab === 'common') {
+    html += card('监控') + row('轮询间隔','检测开播状态的频率', selBox('setPoll')) + '</div>';
+    html += card('录制') +
+      row('默认自动录制','新添加房间默认开播自动录制', ck('setAuto')) +
+      row('录制模式','FLV 直录(时间轴稳);HLS 分片续传', selBox('setMode')) +
+      row('默认清晰度','', selBox('setQn')) +
+      row('自动转封装 MP4','结束后自动转 mp4', ck('setRemux')) +
+      row('结束后自动生成字幕','弹幕/礼物/SC 转成字幕', ck('setDanmakuSrt')) + '</div>';
+  } else if (_setTab === 'record') {
+    html += card('录制备选') +
+      row('FLV 断流续录','断流重连后继续写同一文件;关=切新文件', ck('setAppend')) +
+      row('标题变化分割','直播间改标题时切分文件', ck('setSplitTitle')) +
+      row('按时长分割(小时)','0=不分割', num('setSplitH',0,24)) +
+      row('按大小分割(GB)','0=不分割', num('setSplitG',0,100)) +
+      row('修复后删除源文件','修复/转码成功后删除原始文件', ck('setRepDel')) +
+      row('文件名格式','空=默认;{ROOMID} {NAME} {TITLE} {DATE} {TIME} {YYYY} {MM} {DD} {HH} {mm} {SS} {FFF}', txt('setFmt','{DATE}_{TIME}_{TITLE}')) +
+      row('录制目录','录制的保存位置(绝对路径)', txt('setOutputDir','/storage/emulated/0/DDTV/rec')) + '</div>';
+    html += `<div class="mono-block" id="outputDirText">${esc(s.outputDir||'')}</div>`;
+  } else if (_setTab === 'content') {
+    html += card('弹幕') +
+      row('弹幕屏蔽词','用 | 分隔,如: 广告|代购', txt('setBlock','广告|代购')) +
+      row('弹幕监听','房间详情的弹幕开关,连接后实时显示', '<span class="toolbar-text">房间详情设置</span>') +
+      row('小心心挂机','上报观看时长,需登录', ck('setHeart')) +
+      row('开播/下播提醒','全局开关,房间可单独关闭', ck('setRemind')) + '</div>';
+    html += card('弹幕存档') +
+      row('实时保存','弹幕/礼物到达即写入流水,结束生成正式存档(被杀不丢)','<span class="toolbar-text">已开启</span>') + '</div>';
+  } else if (_setTab === 'subtitle') {
+    html += card('字幕') +
+      row('结束后自动生成字幕','录制结束/下播自动把弹幕/礼物/SC 转成字幕', ck('setDanmakuSrt')) +
+      row('格式','SRT 通用;ASS 静态带样式;ASS 弹幕滚动', selBox('setSubFormat')) + '</div>';
+    html += card('ASS 弹幕') +
+      row('滚动速度','每条弹幕飞过屏幕的快慢', segHtml('setSubSpeed', s.subSpeed||'normal', [{v:'slow',label:'慢'},{v:'normal',label:'标准'},{v:'fast',label:'快'}])) +
+      row('字号','', segHtml('setSubSize', s.subFontSize||26, [{v:'22',label:'小'},{v:'26',label:'标准'},{v:'30',label:'大'}])) +
+      row('轨道数','同屏最多几层弹幕', segHtml('setSubTracks', s.subTracks||6, [{v:'4',label:'4'},{v:'6',label:'6'},{v:'8',label:'8'}])) +
+      row('显示昵称','', segHtml('setSubName', s.subShowName?'on':'off', [{v:'on',label:'显示'},{v:'off',label:'隐藏'}])) +
+      row('内容','仅普通弹幕,或全量(礼物/SC/上舰)', segHtml('setSubContent', s.subContentAll?'all':'danmu', [{v:'danmu',label:'仅弹幕'},{v:'all',label:'全部'}])) +
+      row('颜色','跟随B站原色或统一白色', segHtml('setSubColor', s.subWhiteColor?'white':'original', [{v:'original',label:'原色'},{v:'white',label:'白色'}])) +
+      row('字体','空=默认(微软雅黑)', txt('setSubFont','Microsoft YaHei')) + '</div>';
+  } else if (_setTab === 'keep') {
+    html += card('保活') +
+      row('开机自启','手机重启后自动恢复直播监控', ck('setAutoStart')) +
+      row('屏幕常亮','保持屏幕常亮,方便查看状态', ck('setKeepScreen')) +
+      row('后台保活设置','系统应用信息页允许自启动/后台运行', `<button class="btn btn-sec btn-sm" onclick="openAppBackgroundSettings()">去设置</button>`) +
+      row('后台任务锁定','最近任务长按锁定,防系统清理', '<span class="toolbar-text">见常见问题</span>') + '</div>';
+    html += card('权限') +
+      row('通知权限','开播/下播提醒推送', `<span class="perm-state" id="permNotification">…</span><button class="btn btn-sec btn-sm" onclick="requestPerm('notification')">授权</button>`) +
+      row('存储权限','所有文件访问(自定义录制目录需要)', `<span class="perm-state" id="permStorage">…</span><button class="btn btn-sec btn-sm" onclick="requestPerm('storage')">授权</button>`) +
+      row('电池优化白名单','后台持续录制不被系统休眠', `<span class="perm-state" id="permBattery">…</span><button class="btn btn-sec btn-sm" onclick="requestPerm('battery')">授权</button>`) + '</div>';
+  } else {
+    html += card('关于') +
+      row('调试服务器','局域网可查看运行状态与日志,默认关闭', ck('setDebug')) +
+      row('启动时检查更新','启动后静默检查,发现新版本才提示', ck('setAutoUpdate')) + '</div>';
+    html += `<div class="btn-row tight"><button class="btn btn-sec btn-sm" onclick="renderCrashLogs()">${ic('alert',12)} 崩溃日志</button>
+      <button class="btn btn-sec btn-sm" onclick="checkUpdateNow()">${ic('refresh',12)} 检查更新</button>
+      <span class="toolbar-text">当前版本 v${esc(state.version||'')}</span></div>`;
+    html += `<div class="set-card"><div class="set-card-title">常见问题</div>
+      <div class="sw-text"><div class="sw-desc">保活 / 字幕 / 日志 / 转码等使用问题,点击展开查看</div></div>
+      <div class="btn-row tight"><button class="btn btn-sec btn-sm" onclick="renderFaq()">${ic('alert',12)} 打开常见问题</button></div></div>`;
+  }
+  panel.innerHTML = html;
+}
+
+function initSettingsControls(s) {
+  if (!s) { try { s = JSON.parse(AndroidBridge.getSettings()); } catch(e){ return; } }
+  const ck = (id, on) => { const el = document.getElementById(id); if (el) el.checked = !!on; };
+  const v = (id, val) => { const el = document.getElementById(id); if (el) el.value = val; };
+  renderCSelect($('#setPoll'), [{v:'5',label:'5 秒'},{v:'10',label:'10 秒'},{v:'15',label:'15 秒'},{v:'30',label:'30 秒'},{v:'60',label:'60 秒'}], String(s.pollInterval||15), ()=>saveSettings());
+  renderCSelect($('#setQn'), Object.entries(qnLabels).map(([k,l])=>({v:k,label:l})), String(s.quality||10000), ()=>saveSettings());
+  renderCSelect($('#setMode'), [{v:'flv',label:'FLV 直录'},{v:'hls',label:'HLS'},{v:'auto',label:'自动(有HLS用HLS)'}], String(s.recordMode||'flv'), ()=>saveSettings());
+  renderCSelect($('#setSubFormat'), [{v:'srt',label:'SRT 字幕'},{v:'ass',label:'ASS 字幕'},{v:'assdm',label:'ASS 弹幕(滚动)'}], String(s.danmakuSubFormat||'srt'), ()=>saveSettings());
+  ck('setAuto', s.autoRecord); ck('setAppend', s.flvAppendOnReconnect!==false);
+  ck('setSplitTitle', s.splitByTitle); v('setSplitH', s.splitSeconds?Math.round(s.splitSeconds/3600):0);
+  v('setSplitG', s.splitSizeMB?Math.round(s.splitSizeMB/1024):0); ck('setRemux', s.remuxAfterLive);
+  ck('setRepDel', s.repairDeleteSource!==false); ck('setHeart', s.watchHeartbeat);
+  ck('setRemind', s.remindLive); v('setBlock', s.blockBarrage||''); v('setFmt', s.fileNameFormat||'');
+  v('setOutputDir', s.outputDir||''); ck('setAutoUpdate', s.autoUpdate);
+  ck('setDebug', !!s.debugServer); ck('setKeepScreen', !!s.keepScreenOn); ck('setAutoStart', !!s.autoStart);
+  ck('setDanmakuSrt', !!s.danmakuSrt); v('setSubFont', s.subFont||'');
   refreshPermStatus();
 }
+
 function saveSettings() {
-  const s={pollInterval:Number($('#setPoll').dataset.value),autoRecord:$('#setAuto').checked,quality:Number($('#setQn').dataset.value),
-    recordMode:$('#setMode').dataset.value,
-    splitByTitle:$('#setSplitTitle').checked,splitSeconds:Number($('#setSplitH').value)*3600,splitSizeMB:Number($('#setSplitG').value)*1024,
-    remuxAfterLive:$('#setRemux').checked,watchHeartbeat:$('#setHeart').checked,remindLive:$('#setRemind').checked,
-    repairDeleteSource:$('#setRepDel').checked,flvAppendOnReconnect:$('#setAppend').checked,
-    blockBarrage:$('#setBlock').value.trim(),fileNameFormat:$('#setFmt').value.trim(),
-    autoUpdate:$('#setAutoUpdate').checked,
-    debugServer:$('#setDebug').checked,
-    keepScreenOn:$('#setKeepScreen').checked,
-    autoStart:$('#setAutoStart').checked,
-    danmakuSrt:$('#setDanmakuSrt').checked,
-    danmakuSubFormat:$('#setSubFormat').dataset.value||'srt'};
-  const r=JSON.parse(AndroidBridge.setSettings(JSON.stringify(s)));
-  toast(r.msg, r.code<0?'err':'ok'); if(r.code>0){state.settings=s;updateStatusbar();}
+  const prev = state.settings || {};
+  const ck = (id, fb) => { const el = document.getElementById(id); return el ? el.checked : fb; };
+  const nv = (id, fb) => { const el = document.getElementById(id); return el ? (Number(el.value)||0) : fb; };
+  const sv = (id, fb) => { const el = document.getElementById(id); return el ? (el.value||'') : fb; };
+  const dv = (id, fb) => { const el = document.getElementById(id); return el ? (el.dataset.value||fb) : fb; };
+  const sg = (id, fb) => { const el = document.getElementById(id); if (!el) return fb; const b = el.querySelector('.seg-btn.on'); return b ? b.dataset.v : fb; };
+  const s = {
+    pollInterval: Number(dv('setPoll', String(prev.pollInterval||15))) || prev.pollInterval || 15,
+    autoRecord: ck('setAuto', prev.autoRecord),
+    quality: Number(dv('setQn', String(prev.quality||10000))) || prev.quality || 10000,
+    recordMode: dv('setMode', prev.recordMode||'flv'),
+    splitByTitle: ck('setSplitTitle', prev.splitByTitle),
+    splitSeconds: nv('setSplitH', (prev.splitSeconds||0)/3600) * 3600,
+    splitSizeMB: nv('setSplitG', (prev.splitSizeMB||0)/1024) * 1024,
+    remuxAfterLive: ck('setRemux', prev.remuxAfterLive),
+    watchHeartbeat: ck('setHeart', prev.watchHeartbeat),
+    remindLive: ck('setRemind', prev.remindLive),
+    repairDeleteSource: ck('setRepDel', prev.repairDeleteSource),
+    flvAppendOnReconnect: ck('setAppend', prev.flvAppendOnReconnect),
+    blockBarrage: sv('setBlock', prev.blockBarrage||''),
+    fileNameFormat: sv('setFmt', prev.fileNameFormat||''),
+    autoUpdate: ck('setAutoUpdate', prev.autoUpdate),
+    debugServer: ck('setDebug', prev.debugServer),
+    keepScreenOn: ck('setKeepScreen', prev.keepScreenOn),
+    autoStart: ck('setAutoStart', prev.autoStart),
+    danmakuSrt: ck('setDanmakuSrt', prev.danmakuSrt||false),
+    danmakuSubFormat: dv('setSubFormat', prev.danmakuSubFormat||'srt'),
+    subSpeed: sg('setSubSpeed', prev.subSpeed||'normal'),
+    subFontSize: Number(sg('setSubSize', '26')) || 26,
+    subTracks: Number(sg('setSubTracks', '6')) || 6,
+    subShowName: sg('setSubName', prev.subShowName?'on':'off') === 'on',
+    subContentAll: sg('setSubContent', prev.subContentAll?'all':'danmu') === 'all',
+    subWhiteColor: sg('setSubColor', prev.subWhiteColor?'white':'original') === 'white',
+    subFont: sv('setSubFont', prev.subFont||''),
+  };
+  const r = JSON.parse(AndroidBridge.setSettings(JSON.stringify(s)));
+  toast(r.msg, r.code<0?'err':'ok'); if(r.code>0){ state.settings = s; updateStatusbar(); }
 }
 
 function pickOutputDir() {

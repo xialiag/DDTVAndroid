@@ -441,6 +441,13 @@ class DDTVBridge(private val context: Context, private val webView: WebView) {
             put("autoStart", s.autoStart)
             put("danmakuSrt", s.danmakuSrt)
             put("danmakuSubFormat", s.danmakuSubFormat)
+            put("subSpeed", s.subSpeed)
+            put("subFontSize", s.subFontSize)
+            put("subTracks", s.subTracks)
+            put("subShowName", s.subShowName)
+            put("subContentAll", s.subContentAll)
+            put("subWhiteColor", s.subWhiteColor)
+            put("subFont", s.subFont)
             put("outputDir", RoomManager.outputDir.absolutePath)
             put("version", com.ddtv.app.BuildConfig.VERSION_NAME)
         }.toString()
@@ -471,6 +478,13 @@ class DDTVBridge(private val context: Context, private val webView: WebView) {
                 autoStart = o.optBoolean("autoStart", autoStart)
                 danmakuSrt = o.optBoolean("danmakuSrt", danmakuSrt)
                 danmakuSubFormat = o.optString("danmakuSubFormat", danmakuSubFormat).let { if (it == "ass" || it == "assdm" || it == "srt") it else "srt" }
+                subSpeed = o.optString("subSpeed", subSpeed).let { if (it == "slow" || it == "fast") it else "normal" }
+                subFontSize = o.optInt("subFontSize", subFontSize).let { if (it in arrayOf(22, 26, 30)) it else 26 }
+                subTracks = o.optInt("subTracks", subTracks).let { if (it in arrayOf(4, 6, 8)) it else 6 }
+                subShowName = o.optBoolean("subShowName", subShowName)
+                subContentAll = o.optBoolean("subContentAll", subContentAll)
+                subWhiteColor = o.optBoolean("subWhiteColor", subWhiteColor)
+                subFont = o.optString("subFont", subFont).take(32)
             }
             RoomManager.saveSettings()
             com.ddtv.app.core.LiveRecorder.applySettings(RoomManager.settings)

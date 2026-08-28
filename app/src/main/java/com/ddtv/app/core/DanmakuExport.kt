@@ -11,15 +11,44 @@ import java.util.Locale
  *  - "srt"     → .srt 静态字幕（通用兼容，逐条字幕显示）
  *  - "ass"     → .ass 静态字幕（V4+ 样式，底部逐条叠加）
  *  - "assdm"   → .ass 弹幕（\move 从右往左滚动飞过，带弹幕颜色，最接近原版弹幕观感）
+ * 渲染细节由 AssOptions 控制（设置页"字幕"页签；默认值=原行为）。
  */
 object DanmakuExport {
 
-    private fun label(it: DanmakuItem): String = when (it.type) {
-        "DANMU_MSG" -> "${it.user}: ${it.content}"
-        "SEND_GIFT" -> "【礼物】${it.user} 送出 ${it.content}"
-        "SUPER_CHAT_MESSAGE" -> "【SC】${it.user}: ${it.content}"
-        "GUARD_BUY", "GUARD_RENEW" -> "【上舰】${it.user} ${it.content}"
-        else -> "${it.user}: ${it.content}"
+    /** ASS 字幕渲染选项(设置页"字幕"页签) */
+    data class AssOptions(
+        val speed: Float = 1.0f,        // 滚动速度倍率(慢0.6/标准1.0/快1.4)
+        val fontSize: Int = 26,         // 字号
+        val tracks: Int = 6,            // 弹幕轨道数
+        val showName: Boolean = true,   // 显示昵称
+        val contentAll: Boolean = true, // 全部内容(含礼物/SC/上舰)
+        val whiteColor: Boolean = false, // 统一白色
+        val font: String = "Microsoft YaHei",
+    )
+
+    /** 从应用设置构造 ASS 选项 */
+    fun optionsFromSettings(): AssOptions {
+        val s = RoomManager.settings
+        return AssOptions(
+            speed = when (s.subSpeed) { "slow" -> 0.6f; "fast" -> 1.4f; else -> 1.0f },
+            fontSize = s.subFontSize,
+            tracks = s.subTracks,
+            showName = s.subShowName,
+            contentAll = s.subContentAll,
+            whiteColor = s.subWhiteColor,
+            font = s.subFont.ifBlank { "Microsoft YaHei" },
+        )
+    }
+
+    private fun label(it: DanmakuItem, o: AssOptions): String {
+        val show = if (o.showName) "${it.user}: " else ""
+        return when (it.type) {
+            "DANMU_MSG" -> show + it.content
+            "SEND_GIFT" -> "【礼物】${it.user} 送出 ${it.content}"
+            "SUPER_CHAT_MESSAGE" -> "【SC】${it.user}: ${it.content}"
+            "GUARD_BUY", "GUARD_RENEW" -> "【上舰】${it.user} ${it.content}"
+            else -> show + it.content
+        }
     }
 
     /** 时间轴段：每条弹幕 [t, 下一条/末尾+5000)，返回 (start,end) ms */
@@ -49,7 +78,7 @@ object DanmakuExport {
         segments(sorted, startMs).forEachIndexed { idx, (t, end) ->
             sb.append(idx + 1).append('\n')
                 .append(fmtSrtTime(t)).append(" --> ").append(fmtSrtTime(end)).append('\n')
-                .append(label(sorted[idx])).append("\n\n")
+                .append(label(sorted[idx], AssOptions())).append("\n\n")
         }
         return sb.toString()
     }
@@ -63,21 +92,21 @@ object DanmakuExport {
         return String.format(Locale.CHINA, "%d:%02d:%02d.%02d", h, m, s, cs)
     }
 
-    private fun assHeader(fontPx: Int): String = "[Script Info]\nScriptType: v4.00+\nPlayResX: 1280\nPlayResY: 720\n\n" +
+    private fun assHeader(fontSize: Int, font: String): String = "[Script Info]\nScriptType: v4.00+\nPlayResX: 1280\nPlayResY: 720\n\n" +
         "[V4+ Styles]\n" +
         "Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding\n" +
-        "Style: Default,Microsoft YaHei,$fontPx,&H00FFFFFF,&H000000FF,&H00000000,&H64000000,0,0,0,0,100,100,0,0,1,3,0,2,10,10,20,1\n\n" +
+        "Style: Default,$font,$fontSize,&H00FFFFFF,&H000000FF,&H00000000,&H64000000,0,0,0,0,100,100,0,0,1,3,0,2,10,10,20,1\n\n" +
         "[Events]\n" +
         "Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text\n"
 
     /** 弹幕列表 → .ass 静态字幕（逐条底部叠加显示，适合当字幕看） */
-    fun buildAss(items: List<DanmakuItem>, startMs: Long): String {
+    fun buildAss(items: List<DanmakuItem>, startMs: Long, opts: AssOptions = AssOptions()): String {
         val sorted = items.sortedBy { it.time }
         if (sorted.isEmpty()) return ""
-        val sb = StringBuilder(assHeader(28))
+        val sb = StringBuilder(assHeader(opts.fontSize, opts.font))
         val segs = segments(sorted, startMs)
         segs.forEachIndexed { i, (t, end) ->
-            val text = label(sorted[i]).replace("\n", " ")
+            val text = label(sorted[i], opts).replace("\n", " ")
             sb.append("Dialogue: 0,").append(fmtAssTime(t)).append(",").append(fmtAssTime(end))
                 .append(",Default,,0,0,0,,").append(text).append('\n')
         }
@@ -96,24 +125,24 @@ object DanmakuExport {
     private fun escAss(s: String): String = s.replace("\\", "").replace("\n", " ").replace("\r", " ")
 
     /**
-     * 弹幕列表 → .ass **弹幕**(滚动)：每条弹幕 \move 从右(1280)往左(-320)飞过，按条分轨道，带弹幕颜色。
-     * 最接近原版弹幕观感（像视频里滚动飞过的弹幕）。
+     * 弹幕列表 → .ass **弹幕**(滚动)：每条弹幕 \move 从右(1280)往左(-340)飞过，按条分轨道，带弹幕颜色。
+     * 速度/字号/轨道数/昵称/内容/颜色由 opts 控制。
      */
-    fun buildAssDanmaku(items: List<DanmakuItem>, startMs: Long): String {
-        val sorted = items.sortedBy { it.time }
+    fun buildAssDanmaku(items: List<DanmakuItem>, startMs: Long, opts: AssOptions = AssOptions()): String {
+        val sorted = items.sortedBy { it.time }.filter { opts.contentAll || it.type == "DANMU_MSG" }
         if (sorted.isEmpty()) return ""
-        val sb = StringBuilder(assHeader(24))
-        val trackCount = 6
+        val sb = StringBuilder(assHeader(opts.fontSize, opts.font))
+        val trackCount = opts.tracks
         val trackH = 44
         val y0 = 88
+        val durMs = (3200f / opts.speed).toLong()
         val segs = segments(sorted, startMs)
         segs.forEachIndexed { i, (t, _) ->
             val it = sorted[i]
             val y = y0 + (i % trackCount) * trackH
-            val col = assCol(it.color)
-            val text = escAss(label(it))
-            // 每条弹幕独立 3.2s 飞过；\move 从屏幕右外到左外
-            sb.append("Dialogue: 0,").append(fmtAssTime(t)).append(",").append(fmtAssTime(t + 3200))
+            val col = if (opts.whiteColor) "&H00FFFFFF" else assCol(it.color)
+            val text = escAss(label(it, opts))
+            sb.append("Dialogue: 0,").append(fmtAssTime(t)).append(",").append(fmtAssTime(t + durMs))
                 .append(",Default,,0,0,0,,{\\move(1280,$y,-340,$y)\\1c$col}").append(text).append('\n')
         }
         return sb.toString()
@@ -130,9 +159,10 @@ object DanmakuExport {
             val items = readDanmakuJsons(dir)
             if (items.isEmpty()) return """{"code":-1,"msg":"该目录下没有弹幕数据(需先录制并落盘弹幕)"}"""
             val startMs = videoStartMs(vf)
+            val opts = optionsFromSettings()
             val text = when (f) {
-                "ass" -> buildAss(items, startMs)
-                "assdm" -> buildAssDanmaku(items, startMs)
+                "ass" -> buildAss(items, startMs, opts)
+                "assdm" -> buildAssDanmaku(items, startMs, opts)
                 else -> buildSrt(items, startMs)
             }
             if (text.isBlank()) return """{"code":-1,"msg":"弹幕数据为空"}"""
@@ -187,9 +217,10 @@ object DanmakuExport {
         val f = format ?: "srt"
         val ext = if (f == "srt") "srt" else "ass"
         val start = items.minOfOrNull { it.time } ?: 0
+        val opts = optionsFromSettings()
         val text = when (f) {
-            "ass" -> buildAss(items, start)
-            "assdm" -> buildAssDanmaku(items, start)
+            "ass" -> buildAss(items, start, opts)
+            "assdm" -> buildAssDanmaku(items, start, opts)
             else -> buildSrt(items, start)
         }
         if (text.isBlank()) return null

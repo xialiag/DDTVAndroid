@@ -962,6 +962,13 @@ object RoomManager {
             autoStart = prefs.getBoolean("auto_start", true),
             danmakuSrt = prefs.getBoolean("danmaku_srt", false),
             danmakuSubFormat = prefs.getString("danmaku_sub_format", "srt") ?: "srt",
+            subSpeed = prefs.getString("sub_speed", "normal") ?: "normal",
+            subFontSize = prefs.getInt("sub_font_size", 26),
+            subTracks = prefs.getInt("sub_tracks", 6),
+            subShowName = prefs.getBoolean("sub_show_name", true),
+            subContentAll = prefs.getBoolean("sub_content_all", true),
+            subWhiteColor = prefs.getBoolean("sub_white_color", false),
+            subFont = prefs.getString("sub_font", "") ?: "",
         )
     }
 
@@ -989,6 +996,13 @@ object RoomManager {
             .putBoolean("auto_start", settings.autoStart)
             .putBoolean("danmaku_srt", settings.danmakuSrt)
             .putString("danmaku_sub_format", settings.danmakuSubFormat)
+            .putString("sub_speed", settings.subSpeed)
+            .putInt("sub_font_size", settings.subFontSize)
+            .putInt("sub_tracks", settings.subTracks)
+            .putBoolean("sub_show_name", settings.subShowName)
+            .putBoolean("sub_content_all", settings.subContentAll)
+            .putBoolean("sub_white_color", settings.subWhiteColor)
+            .putString("sub_font", settings.subFont)
             .apply()
         LiveRecorder.applySettings(settings)
         // 小心心开关即时生效
