@@ -823,6 +823,13 @@ object RoomManager {
             writeCsv("_上舰.csv", "时间,昵称,Uid,类型,内容", guards)
             writeCsv("_SC.csv", "时间,昵称,Uid,内容,价格", scs)
             val files = listOf(base.name + ".json") + listOf("_弹幕.csv", "_礼物.csv", "_上舰.csv", "_SC.csv").map { base.name + it }.filter { java.io.File(dir, base.name + it).exists() }
+            // 结束后自动转字幕(.srt)：设置"结束自动转字幕"开关开启时生成，与 danmu json 同名
+            if (RoomManager.settings.danmakuSrt) {
+                DanmakuExport.saveForAuto(items, base)?.let { srt ->
+                    Logger.i("Room", "[${card.name}] 字幕已生成: ${srt.name}")
+                    notifyLog(card.roomId, "info", "字幕已生成: ${srt.name}")
+                }
+            }
             Logger.i("Room", "[${card.name}] 弹幕存档: ${files.joinToString()} (弹幕${items.count { it.type == "DANMU_MSG" }}条/礼物${gifts.size}个/上舰${guards.size}次/SC${scs.size}条)")
             notifyLog(card.roomId, "info", "弹幕存档: ${files.joinToString()}")
         } catch (e: Exception) {
@@ -862,6 +869,7 @@ object RoomManager {
             updateRepo = prefs.getString("update_repo", "xialiag/DDTVAndroid")?.takeIf { it.isNotBlank() } ?: "xialiag/DDTVAndroid",
             autoUpdate = prefs.getBoolean("auto_update", true),
             autoStart = prefs.getBoolean("auto_start", true),
+            danmakuSrt = prefs.getBoolean("danmaku_srt", false),
         )
     }
 
@@ -887,6 +895,7 @@ object RoomManager {
             .putString("update_repo", settings.updateRepo)
             .putBoolean("auto_update", settings.autoUpdate)
             .putBoolean("auto_start", settings.autoStart)
+            .putBoolean("danmaku_srt", settings.danmakuSrt)
             .apply()
         LiveRecorder.applySettings(settings)
         // 小心心开关即时生效
