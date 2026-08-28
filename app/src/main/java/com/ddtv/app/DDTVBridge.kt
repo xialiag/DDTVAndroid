@@ -25,13 +25,14 @@ class DDTVBridge(private val context: Context, private val webView: WebView) {
     init {
         // 修复任务状态变化 → 推 JS 任务列表
         com.ddtv.app.core.RepairTaskManager.listener = { pushRepairTasks() }
-        // 在线听直播状态变化 → 推 JS 更新按钮/提示
-        ListenService.listener = { roomId, p, label ->
+        // 在线听直播状态变化 → 推 JS 更新按钮/提示(进程内播放器,不依赖 Service)
+        com.ddtv.app.core.ListenPlayer.init(context)
+        com.ddtv.app.core.ListenPlayer.listener = { roomId, p, label ->
             val card = com.ddtv.app.core.RoomManager.getRoom(roomId)
             pushToJs(JSONObject().apply {
                 put("type", "listen_status")
                 // active 以当前实际收听状态为准（停止/下播后为 false，前端据此隐藏控制器）
-                put("active", ListenService.activeRoom() == roomId)
+                put("active", com.ddtv.app.core.ListenPlayer.activeRoom() == roomId)
                 put("playing", p)
                 put("roomId", roomId)
                 put("name", card?.name ?: "房间 $roomId")
@@ -345,34 +346,25 @@ class DDTVBridge(private val context: Context, private val webView: WebView) {
             return """{"code":0,"msg":"房间未开播，无法收听"}"""
         }
         com.ddtv.app.core.Logger.i("Listen", "[bridge] startListen room=$roomId liveStatus=${card.liveStatus} 录制中=${com.ddtv.app.core.LiveRecorder.isRecordingRoom(roomId)}")
-        ListenService.start(context, roomId)
+        com.ddtv.app.core.ListenPlayer.start(roomId)
         return """{"code":1,"msg":"正在连接直播…"}"""
     }
 
     @JavascriptInterface
     fun stopListen(): String {
-        ListenService.stop(context)
+        com.ddtv.app.core.ListenPlayer.stop()
         return """{"code":1,"msg":"已停止收听"}"""
     }
 
     @JavascriptInterface
     fun getListenStatus(): String {
-        val roomId = ListenService.activeRoom()
-        if (roomId == 0L) return """{"active":false}"""
-        val card = RoomManager.getRoom(roomId)
-        return JSONObject().apply {
-            put("active", true)
-            put("playing", ListenService.playing)
-            put("roomId", roomId)
-            put("name", card?.name ?: "房间 $roomId")
-            put("title", card?.title ?: "")
-        }.toString()
+        return com.ddtv.app.core.ListenPlayer.statusJson()
     }
 
-    /** 切换当前收听的播放/暂停（通知栏/前端控制器用） */
+    /** 切换当前收听的播放/暂停（前端控制器用） */
     @JavascriptInterface
     fun toggleListenPlay() {
-        ListenService.toggle(context)
+        com.ddtv.app.core.ListenPlayer.toggle()
     }
 
     @JavascriptInterface
@@ -505,7 +497,7 @@ class DDTVBridge(private val context: Context, private val webView: WebView) {
 
     // ============ 自动更新（GitHub Releases，参照原版 ProgramUpdates） ============
 
-    private val currentVersion: String = "0.7.49"
+    private val currentVersion: String = "0.7.50"
 
     /** 解析 "v0.7.0" / "0.7.0-beta1" 为可比较数字段列表 */
     private fun versionParts(v: String): List<Long> {
