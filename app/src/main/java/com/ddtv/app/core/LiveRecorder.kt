@@ -530,6 +530,28 @@ object LiveRecorder {
             (raf.readUnsignedByte().toLong() shl 8) or raf.readUnsignedByte().toLong())
 
     /**
+     * append 续写重连后跳过服务器重复发送的 FLV 头(9 字节 FLV 头 + 4 字节 prevTagSize0)，
+     * 避免文件中段插入 FLV 头破坏 FLV tag 序列。探测读 13 字节；若不是 FLV 头则写回，不丢字节。
+     */
+    private fun skipReconnectFlvHeader(input: java.io.InputStream, fos: FileOutputStream) {
+        val probe = ByteArray(13)
+        var n = 0
+        try {
+            while (n < 13) {
+                val r = input.read(probe, n, 13 - n)
+                if (r < 0) break
+                n += r
+            }
+        } catch (e: Exception) {
+            if (n > 0) fos.write(probe, 0, n)  // 探测异常：写回已读数据，避免丢字节
+            return
+        }
+        val isFlvHeader = n >= 3 && probe[0] == 'F'.code.toByte() &&
+            probe[1] == 'L'.code.toByte() && probe[2] == 'V'.code.toByte()
+        if (!isFlvHeader && n > 0) fos.write(probe, 0, n)
+    }
+
+    /**
      * 段收尾（FLV 先修尾部；仅录音频时提取 m4a）。
      * 文件已被外部删除时清理 card.files 记录，不留幽灵条目。
      * @return 是否有产物留下（供调用方判断是否触发结束事件）
@@ -621,6 +643,10 @@ object LiveRecorder {
                             return@use
                         }
                         val input = conn.inputStream
+                        // 断流重连续写同一文件(append)时，B 站会重新发送 FLV 头(9+4 字节)。
+                        // 若直接写文件会把 FLV 头插到文件中段，fixFlvTail 逐 tag 校验时在 'F'(0x46)
+                        // 处中断，整段后续数据被判为损坏截除(实测 1.9GB 只留 895MB 丢 30 分钟)。
+                        if (flvAppendOnReconnect && java.io.File(file).length() > 0) skipReconnectFlvHeader(input, fos)
                         val buf = ByteArray(81920)
                         while (!task.cancel.get()) {
                             if (shouldCut(card, segStartLiveTime, segStartTitle, stopWatch.elapsedSec(), bytesForThisSegment)) {
