@@ -15,6 +15,11 @@ object BiliLiveApi {
     const val PASSPORT_DOMAIN = "https://passport.bilibili.com"
     const val TRACE_DOMAIN = "https://live-trace.bilibili.com"
 
+    // B站 Android App 签名体系（逆向自 App 8.98.0，供 app-room 纯音频接口用；access_key 可空）
+    private const val APP_KEY = "1d8b6e7d45233436"
+    private const val APP_SECRET = "560c52ccd288fed045859ed18bffd973"
+    private const val APP_BUILD = "8980200"
+
     // WBI 密钥缓存
     @Volatile private var imgKey = ""
     @Volatile private var subKey = ""
@@ -44,6 +49,21 @@ object BiliLiveApi {
                 return false
             }
         }
+    }
+
+    /**
+     * B站 App 接口签名 URL：参数按字典序 k=v 原始值拼接 + appsecret → md5(sign)，
+     * URL 中参数值做 URL 编码并追加 sign。用于 app-room 纯音频接口（无 WBI）。
+     */
+    private fun appSignUrl(path: String, params: LinkedHashMap<String, String>): String {
+        val map = TreeMap<String, String>()
+        map.putAll(params)
+        map["appkey"] = APP_KEY
+        map["ts"] = (System.currentTimeMillis() / 1000).toString()
+        val raw = map.entries.joinToString("&") { "${it.key}=${it.value}" }
+        val sign = Wbi.sign(raw, APP_SECRET)
+        val query = map.entries.joinToString("&") { "${it.key}=${URLEncoder.encode(it.value, "UTF-8")}" }
+        return "$LIVE_DOMAIN$path?$query&sign=$sign"
     }
 
     /** 对 URL 附加 WBI 签名（wts + w_rid），失败时返回原 URL */
@@ -255,8 +275,11 @@ object BiliLiveApi {
      * 同时解析 FLV(http_stream+flv+avc) 与 HLS(http_hls+fmp4+avc)
      * 返回全部 CDN 线路（flvLines/hlsLines），随机取第一条作为主线路，供备线切换使用
      *
-     * audioOnly=true 时优先走 App 接口（app-room + media_type=1）拿纯音频流（省流量，逆向自 B站 App 8.98.0）；
-     * App 接口失败（无登录态/被拒）回退 web-room。
+     * audioOnly=true 时优先走 App 接口（app-room + media_type=1 + App 签名）拿纯音频流（省流量，逆向自 B站 App 8.98.0）；
+     * App 接口失败（-400/被拒）回退常规流。
+     * 实测（2026-09-05 哦特桃）：media_type=1 返回真·纯音频 FLV（拉流 199 audio tag/0 video tag），
+     * 但响应 JSON codec_name 仍标 avc（勿以此误判），真判据是 url_info.extra 的 ptype=1；
+     * web-room + ptype=8 无效（与常规流一致，混合流）。
      */
     fun getStreamInfo(roomId: Long, qn: Int = 10000, audioOnly: Boolean = false): StreamInfo? {
         if (audioOnly) {
@@ -337,20 +360,41 @@ object BiliLiveApi {
      * 纯音频流（App 接口：xlive/app-room/v2/index/getRoomPlayInfo + media_type=1）。
      * 逆向自 B站 App 8.98.0（LiveAudioOnlyWorker → LiveMediaResourceResolver）：
      * media_type 才是音频开关（1=纯音频），ptype 对应 play_type 客户端固定 0，free_type 枚举 0-3。
-     * 实测 app-room 需带 App 签名体系参数（platform/build/mobi_app/appkey/ts）否则 -400；
-     * access_key 可空。响应结构与 web-room 相同（playurl_info.playurl.stream）。
-     * 注：服务端当前即使 media_type=1 仍返回含视频 codec 的流（音频分离或已失效），
-     * 纯音频文件由 LiveRecorder 录制后用 FFmpeg extractAudio 提取实现。
+     * App 签名体系必须（appkey/ts/sign + platform/mobi_app/build）否则 -400；access_key 可空。
+     * 实测（2026-09-05）：media_type=1 返回纯音频 FLV（拉流无 video tag），codec_name 仍标 avc，
+     * 解析允许 avc/aac 以兼容两种形态；纯音频流优先 FLV（对齐 App LiveP0PlayUrlSelector）。
      */
-        private fun getAudioStreamInfo(roomId: Long, qn: Int = 150): StreamInfo? {
+    private fun getAudioStreamInfo(roomId: Long, qn: Int = 150): StreamInfo? {
         return try {
-            // web-room + ptype=8：B站「仅播声音」关键开关（逆向自 App 8.98.0），
-            // 服务端只下发纯音频流（无 video 元素），省流量且 ExoPlayer 稳定播放
-            val url = signUrl(
-                "$LIVE_DOMAIN/xlive/web-room/v2/index/getRoomPlayInfo?room_id=$roomId" +
-                        "&protocol=0,1&format=0,1,2&codec=0,1,2&qn=$qn&platform=web&ptype=8"
+            val url = appSignUrl(
+                "/xlive/app-room/v2/index/getRoomPlayInfo",
+                linkedMapOf(
+                    "room_id" to roomId.toString(),
+                    "no_playurl" to "0",
+                    "qn" to qn.toString(),
+                    "free_type" to "0",
+                    "http" to "1",
+                    "dolby" to "0",
+                    "network" to "wifi",
+                    "mask" to "0",
+                    "media_type" to "1", // ★ 纯音频开关（唯一生效参数）
+                    "only_video" to "0",
+                    "play_type" to "0",
+                    "protocol" to "0,1",
+                    "format" to "0,2",
+                    "codec" to "0,1",
+                    "device_name" to android.os.Build.MODEL,
+                    "special_scenario" to "0",
+                    "supported_drms" to "0,3",
+                    "eotf" to "",
+                    "req_reason" to "0",
+                    "cam_id" to "0",
+                    "platform" to "android",
+                    "mobi_app" to "android",
+                    "build" to APP_BUILD
+                )
             )
-            val body = Http.get(url, referer = LIVE_WEB_DOMAIN)
+            val body = Http.get(url, ua = Http.appUserAgent)
             val obj = JSONObject(body)
             if (obj.optInt("code") != 0) {
                 Logger.w("Api", "音频流 app-room 失败 room=$roomId: ${obj.optString("message")}")
