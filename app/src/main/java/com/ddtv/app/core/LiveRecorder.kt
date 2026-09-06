@@ -142,7 +142,7 @@ object LiveRecorder {
         lastBackfillAt = now
         Thread({
             try {
-                RoomManager.getRooms().filter { it.audioOnly }.forEach { card ->
+                RoomManager.getRooms().filter { it.effectiveAudioOnly }.forEach { card ->
                     val dir = File(RoomManager.outputDir, sanitize(card.dirName()))
                     if (!dir.isDirectory) return@forEach
                     dir.walkTopDown().forEach { f ->
@@ -245,25 +245,42 @@ object LiveRecorder {
         var lineRound = 0
 
         outer@ while (!task.cancel.get()) {
-            // 1. 获取流信息（audioOnly 时优先纯音频流）
-            val info = BiliLiveApi.getStreamInfo(roomId, card.quality, card.audioOnly)
+            // 1. 获取流信息（audioOnly 时优先纯音频流；语音房无视频流，强制 audioOnly）
+            val info = BiliLiveApi.getStreamInfo(roomId, card.quality, card.effectiveAudioOnly)
             if (info == null) {
                 // 流不可用：查直播状态决定
-                if (RoomManager.getLiveStatus(roomId) == 0) {
-                    Logger.i("Recorder", "[${card.name}] 直播已结束，完成录制")
-                    notifyLiveEnded(roomId, card.files.toList(), "live_ended")
-                    break
+                when (RoomManager.getLiveStatus(roomId)) {
+                    0 -> {
+                        Logger.i("Recorder", "[${card.name}] 直播已结束，完成录制")
+                        notifyLiveEnded(roomId, card.files.toList(), "live_ended")
+                        break
+                    }
+                    // 轮播(2)无流：B站侧 playurl 为空（实测 app-room/web-room 均 EMPTY），
+                    // 继续重试只会每2秒刷"获取失败"日志；停止尝试，等真实开播(status 1)后由轮询/开播事件重新拉起
+                    2 -> {
+                        Logger.w("Recorder", "[${card.name}] 轮播中无可用流，停止录制尝试(等待真实开播)")
+                        break
+                    }
+                    else -> {
+                        // 直播中(1)但取不到流：B 站对付费/私密/权限受限直播的实际行为
+                        // 就是「live_status=1 但未购买/无门票用户 playurl=null」（实测 2026-09-07，
+                        // all_special_types 从不含 1；原版 C# HLS.cs:365 靠取流失败判 PaidLiveStream）。
+                        // 不再每 2 秒无限重试刷日志，明确提示用户并停止本次录制尝试
+                        //（开播事件/轮询仍会拉起新任务，购买门票后手动重录即可）。
+                        val msg = if (!AccountManager.isLoggedIn()) {
+                            "直播中但无可用流（可能是付费直播，需登录后拖动/购买门票）"
+                        } else {
+                            "直播中但无可用流（可能是付费直播或权限受限，无门票无法录制）"
+                        }
+                        Logger.w("Recorder", "[${card.name}] $msg")
+                        card.lastError = msg
+                        notifyError(roomId, msg)
+                        break
+                    }
                 }
-                // 轮播(2)无流：B站侧 playurl 为空（实测 app-room/web-room 均 EMPTY），
-                // 继续重试只会每2秒刷"获取失败"日志；停止尝试，等真实开播(status 1)后由轮询/开播事件重新拉起
-                if (RoomManager.getLiveStatus(roomId) == 2) {
-                    Logger.w("Recorder", "[${card.name}] 轮播中无可用流，停止录制尝试(等待真实开播)")
-                    break
-                }
-                if (!retryDelay(task, 2000)) break
-                continue
             }
             if (info.isPaid && !AccountManager.isLoggedIn()) {
+                // 仅作 future 兜底：B 站若恢复 special_types=1 付费标记时未登录拦截
                 Logger.w("Recorder", "[${card.name}] 付费直播且未登录，跳过")
                 card.lastError = "付费直播需要登录"
                 notifyError(roomId, "付费直播需要登录")
@@ -607,7 +624,7 @@ object LiveRecorder {
      * @return 新 m4a 路径；失败且已清理时返回空串；失败但保留原文件时返回原路径
      */
     private fun afterSegmentFinalized(card: RoomCard, file: String): String {
-        if (!card.audioOnly) return file
+        if (!card.effectiveAudioOnly) return file
         val m4a = FFmpegRemux.extractAudio(file, card.title, card.name)
         if (m4a != null) {
             val idx = card.files.indexOf(file)

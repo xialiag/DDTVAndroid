@@ -340,12 +340,19 @@ object RoomManager {
         card.shortId = Json.objLong(data, "short_id", card.shortId)
         card.popularity = Json.objLong(data, "online", card.popularity)
         card.areaName = Json.obj(data, "area_v2_name", card.areaName)
+        // 语音直播间识别：电台/聊天室分区（实测 2026-09-07 get_status_info_by_uids 带 area_v2_id；
+        // 192=聊天电台 190=唱见电台 817=男声电台 818=交友 819=点唱 820=兴趣 943=找人玩）
+        card.voiceRoom = isVoiceArea(Json.objInt(data, "area_v2_id", 0).toLong())
         card.name = Json.obj(data, "uname", "").ifEmpty { card.name }
         card.face = Json.obj(data, "face", card.face)
         card.cover = Json.obj(data, "cover_from_user", card.cover).ifEmpty { Json.obj(data, "keyframe", card.cover) }
         if (card.name != nameBefore) saveRooms()  // 轮询补上的主播名必须持久化，否则重启又回占位目录
         migratePlaceholderFolder(card)
     }
+
+    /** 语音直播间判定：B 站电台/聊天室分区（area_v2_id，实测 2026-09-07）。
+     *  这类房间只有音频流，只能强制「仅录音频」；playurl 的 all_special_types 为 32(电台)/71(聊天室)。 */
+    private fun isVoiceArea(areaId: Long): Boolean = areaId in setOf(190L, 192L, 817L, 818L, 819L, 820L, 943L)
 
     /** 把“房间 <id>/Room<id>”占位目录迁移为真实主播名目录；目标已存在时合并内容
      *  force=true：由录制器在段边界调用（上一个分片已关闭，无打开句柄，可安全迁移），绕过录制中保护
@@ -521,7 +528,7 @@ object RoomManager {
         if (files.isEmpty()) return
         addHistory(card, files)
         migratePlaceholderFolder(card)  // 录制刚结束：立刻迁移占位目录，不等下一轮轮询
-        if (card.audioOnly) {
+        if (card.effectiveAudioOnly) {
             // 仅音频录制结束：立即补提取残留的未提取音频（中断/被杀场景），不等下次启动
             LiveRecorder.extractPendingAudioFiles()
         }
@@ -1036,6 +1043,7 @@ object RoomManager {
                     put("danmakuOpen", card.danmakuOpen)
                     put("remind", card.remind)
                     put("audioOnly", card.audioOnly)
+                    put("voiceRoom", card.voiceRoom)
                     put("cutSeconds", card.cutSeconds)
                     put("cutSizeMB", card.cutSizeMB)
                 })
@@ -1070,6 +1078,7 @@ object RoomManager {
                     danmakuOpen = Json.objBool(o, "danmakuOpen", true),
                     remind = Json.objBool(o, "remind", true),
                     audioOnly = Json.objBool(o, "audioOnly", false),
+                    voiceRoom = Json.objBool(o, "voiceRoom", false),
                     cutSeconds = Json.objLong(o, "cutSeconds", 0),
                     cutSizeMB = Json.objLong(o, "cutSizeMB", 0),
                     // liveStatusPrev 是会话内开播/下播边沿检测变量,不跨会话携带:
