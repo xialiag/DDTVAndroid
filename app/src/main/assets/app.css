@@ -665,6 +665,11 @@ input::placeholder{color:var(--fg-dim);opacity:.9}
   text-overflow:ellipsis;font-variant-numeric:tabular-nums}
 .task-item .ti-sub2{font-size:var(--fs-xs);color:rgba(255,255,255,.72);margin-top:3px;white-space:nowrap;
   overflow:hidden;text-overflow:ellipsis;text-shadow:0 1px 3px rgba(0,0,0,.75)}
+/* 语音直播间标签 */
+.task-item .voice-tag{display:inline-flex;align-items:center;margin-left:6px;padding:1px 6px;border-radius:8px;
+  font-size:var(--fs-micro);font-weight:700;color:#fff;background:rgba(251,114,153,.85);vertical-align:middle;flex:0 0 auto}
+/* 右键菜单禁用项（语音房音频说明） */
+.ctx-menu .ctx-disabled{color:var(--fg-dim);cursor:default}
 /* 无封面 fallback：卡片底色 + 边框，文字用前景色，内容垂直居中 */
 .task-item:not(.has-cover){background:var(--task-nc-bg);border:1px solid var(--card-border)}
 .task-item:not(.has-cover):hover{border-color:var(--border-light)}

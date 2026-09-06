@@ -263,10 +263,20 @@ object BiliLiveApi {
         val flvLines: List<String> = emptyList(),  // 全部 FLV CDN 线路（备线切换用）
         val hlsLines: List<String> = emptyList(),  // 全部 HLS CDN 线路
         val flvPcdnLines: List<String> = emptyList(),  // FLV PCDN 线路（裸IP节点，需 App UA 无 Referer 指纹，仅作最后兜底）
-        val hlsPcdnLines: List<String> = emptyList(),  // HLS PCDN 线路
-        val specialTypes: List<Int> = emptyList(),  // 1=付费直播
+        val hlsPcdnLines: List<String> = emptyList(),  // HLS PCDN 线路（裸IP节点，仅作最后兜底）
+        val specialTypes: List<Int> = emptyList(),  // 实测(2026-09-07)当前枚举: 50=普通/51=手游/32=语音电台/71=聊天室/19=赛事/23=?, 无付费标记
         val liveStatus: Int = 0,
     ) {
+        /** 语音直播间：all_special_types 含 32(电台)/71(聊天室)，只有音频流（实测 2026-09-07） */
+        val isVoice: Boolean get() = specialTypes.any { it == 32 || it == 71 }
+        /**
+         * 付费直播判定。
+         * 实测(2026-09-07): all_special_types 从不含 1，B 站对付费房的实际行为是
+         * 「直播中(live_status=1)但未购买/无门票用户拿不到 playurl(返回 null)」，
+         * 而非 special_types 标记。原版 C# (DDTV-master Core/RuntimeObject/Download/HLS.cs:365)
+         * 同语义: 取流失败(无门票) -> DownloadTaskState.PaidLiveStream。
+         * 因此真正的付费判定在 LiveRecorder: 直播中但取不到流。
+         */
         val isPaid: Boolean get() = specialTypes.contains(1)
     }
 

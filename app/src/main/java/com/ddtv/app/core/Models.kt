@@ -98,6 +98,7 @@ data class RoomCard(
     var danmakuOpen: Boolean = true,
     var remind: Boolean = true,          // 开播/下播提醒（对应原版 IsRemind）
     var audioOnly: Boolean = false,      // 仅录制音频（media_type=1 纯音频流，省流量）
+    var voiceRoom: Boolean = false,      // 语音直播间（电台/聊天室分区，只能录纯音频，无视频流）
     var cutSeconds: Long = 0,      // 房间级按时长分割(0=用全局)
     var cutSizeMB: Long = 0,       // 房间级按大小分割(0=用全局)
     // 运行态
@@ -122,6 +123,9 @@ data class RoomCard(
         val n = name.trim()
         return if (n.isEmpty() || n.startsWith("房间 ") || n.startsWith("Room")) "Room$roomId" else n
     }
+
+    /** 实际是否仅录音频：语音房强制 audioOnly（无视频流），普通房看用户开关 */
+    val effectiveAudioOnly: Boolean get() = audioOnly || voiceRoom
 }
 
 /** 弹幕消息 */

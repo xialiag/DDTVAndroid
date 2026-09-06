@@ -252,8 +252,8 @@ class MainActivity : AppCompatActivity() {
             }
             // 直播结束 → 转封装/修复（flv 优先 remux，mp4 直接 repair 修截断尾部）
             if (RoomManager.settings.remuxAfterLive) {
-                // 仅录音频模式：段结束已提取 m4a；残留 flv 是提取失败品，不再转无视频流的 mp4
-                val audioOnly = RoomManager.getRoom(roomId)?.audioOnly == true
+                // 仅录音频模式（含语音房）：段结束已提取 m4a；残留 flv 是提取失败品，不再转无视频流的 mp4
+                val audioOnly = RoomManager.getRoom(roomId)?.effectiveAudioOnly == true
                 files.filter { !(audioOnly && it.endsWith(".flv")) }.forEach { f ->
                     Thread({
                         var out: String? = null

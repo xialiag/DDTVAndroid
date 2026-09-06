@@ -239,6 +239,8 @@ class DDTVBridge(private val context: Context, private val webView: WebView) {
     @JavascriptInterface
     fun setAudioOnly(roomId: Long, on: Boolean) {
         RoomManager.updateRoom(roomId) { it.audioOnly = on }
+        // 语音房（电台/聊天室）无视频流，强制开启仅录音频，不可关闭
+        RoomManager.updateRoom(roomId) { if (it.voiceRoom) it.audioOnly = true }
     }
 
     // ============ UP 搜索添加直播间 ============
@@ -511,7 +513,7 @@ class DDTVBridge(private val context: Context, private val webView: WebView) {
 
     // ============ 自动更新（GitHub Releases，参照原版 ProgramUpdates） ============
 
-    private val currentVersion: String = "0.7.59"
+    private val currentVersion: String = "0.7.60"
 
     /** 解析 "v0.7.0" / "0.7.0-beta1" 为可比较数字段列表 */
     private fun versionParts(v: String): List<Long> {
@@ -1586,6 +1588,7 @@ class DDTVBridge(private val context: Context, private val webView: WebView) {
             put("danmakuOpen", card.danmakuOpen)
             put("remind", card.remind)
             put("audioOnly", card.audioOnly)
+            put("voiceRoom", card.voiceRoom)
             put("cutSeconds", card.cutSeconds)
             put("cutSizeMB", card.cutSizeMB)
             put("recState", card.recState)
