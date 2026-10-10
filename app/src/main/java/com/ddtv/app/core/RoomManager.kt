@@ -340,13 +340,20 @@ object RoomManager {
         card.shortId = Json.objLong(data, "short_id", card.shortId)
         card.popularity = Json.objLong(data, "online", card.popularity)
         card.areaName = Json.obj(data, "area_v2_name", card.areaName)
-        // 语音直播间识别：电台/聊天室分区（实测 2026-09-07 get_status_info_by_uids 带 area_v2_id；
-        // 192=聊天电台 190=唱见电台 817=男声电台 818=交友 819=点唱 820=兴趣 943=找人玩）
+        // 电台/聊天室分区识别（实测 2026-09-07 get_status_info_by_uids 带 area_v2_id；
+        // 192=聊天电台 190=唱见电台 817=男声电台 818=交友 819=点唱 820=兴趣 943=找人玩）。
+        // 仅作 UI 提示与首次识别默认值（audioOnly=true 省流量），不强制——用户可随时关闭
+        val wasVoice = card.voiceRoom
         card.voiceRoom = isVoiceArea(Json.objInt(data, "area_v2_id", 0).toLong())
+        var audioOnlyDefaulted = false
+        if (card.voiceRoom && !wasVoice && !card.audioOnly) {
+            card.audioOnly = true
+            audioOnlyDefaulted = true
+        }
         card.name = Json.obj(data, "uname", "").ifEmpty { card.name }
         card.face = Json.obj(data, "face", card.face)
         card.cover = Json.obj(data, "cover_from_user", card.cover).ifEmpty { Json.obj(data, "keyframe", card.cover) }
-        if (card.name != nameBefore) saveRooms()  // 轮询补上的主播名必须持久化，否则重启又回占位目录
+        if (card.name != nameBefore || audioOnlyDefaulted) saveRooms()  // 轮询补上的主播名/默认值必须持久化，否则重启又回占位目录
         migratePlaceholderFolder(card)
     }
 
