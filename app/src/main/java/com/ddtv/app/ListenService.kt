@@ -184,18 +184,26 @@ class ListenService : Service() {
                     lines.firstOrNull { hostOf(it) != exclude } ?: lines.firstOrNull()
                 val flv = pickLine(info.flvLines, recHost)
                 val hls = pickLine(info.hlsLines, recHost)
+                // CDN 线路全空时才用 PCDN(裸IP) 兜底;PCDN 走 upsig 防盗链,需 App UA + 无 Referer(与录制侧一致)
+                val flvP = if (flv == null && hls == null) pickLine(info.flvPcdnLines, recHost) else null
+                val hlsP = if (flv == null && hls == null && flvP == null) pickLine(info.hlsPcdnLines, recHost) else null
                 val url: String
                 val isHls: Boolean
+                val isPcdn: Boolean
                 if (flv != null) {
                     // FLV 恒优先(录制时 pickLine 已优先不同 host 的 FLV 错开节点);ExoPlayer 最稳
-                    url = flv; isHls = false
+                    url = flv; isHls = false; isPcdn = false
                 } else if (hls != null) {
-                    url = hls; isHls = true
+                    url = hls; isHls = true; isPcdn = false
+                } else if (flvP != null) {
+                    url = flvP; isHls = false; isPcdn = true
+                } else if (hlsP != null) {
+                    url = hlsP; isHls = true; isPcdn = true
                 } else {
                     finishError(roomId, "该直播暂无可用线路"); return@Thread
                 }
-                Logger.i("Listen", "room=$roomId 选线=${if (isHls) "HLS" else "FLV"} url=${url.take(120)} (flv=${info.flvLines.size}条 hls=${info.hlsLines.size}条 录制节点=${recHost ?: "无"})")
-                mainHandler.post { prepareAndPlay(roomId, url, isHls) }
+                Logger.i("Listen", "room=$roomId 选线=${if (isHls) "HLS" else "FLV"}${if (isPcdn) " PCDN" else ""} url=${url.take(120)} (flv=${info.flvLines.size}条/${info.flvPcdnLines.size}pc hls=${info.hlsLines.size}条/${info.hlsPcdnLines.size}pc 录制节点=${recHost ?: "无"})")
+                mainHandler.post { prepareAndPlay(roomId, url, isHls, isPcdn) }
             } catch (e: Exception) {
                 Logger.e("Listen", "取流异常: ${e.message}")
                 finishError(roomId, "获取直播流失败")
@@ -204,15 +212,20 @@ class ListenService : Service() {
     }
 
     /** 构建并启动播放器（主线程） */
-    private fun prepareAndPlay(roomId: Long, url: String, isHls: Boolean) {
+    private fun prepareAndPlay(roomId: Long, url: String, isHls: Boolean, isPcdn: Boolean = false) {
         try {
             currentRoomId = roomId
             playing = true
-            // HLS 常规线路认 live.bilibili.com；FLV(www) 常规线路认 www.bilibili.com（对齐 LiveRecorder 成功配置）
-            val referer = if (isHls) "https://live.bilibili.com/" else "https://www.bilibili.com/"
-            val ds = DefaultHttpDataSource.Factory()
-                .setUserAgent(Http.userAgent)
-                .setDefaultRequestProperties(mapOf("Referer" to referer))
+            // PCDN(裸IP) 节点走 upsig 防盗链:仅 B站 App UA + 无 Referer 放行(与录制侧 PCDN 指纹一致)
+            val dsFactory = DefaultHttpDataSource.Factory()
+            if (isPcdn) {
+                dsFactory.setUserAgent(Http.appUserAgent)
+            } else {
+                // HLS 常规线路认 live.bilibili.com；FLV(www) 常规线路认 www.bilibili.com（对齐 LiveRecorder 成功配置）
+                val referer = if (isHls) "https://live.bilibili.com/" else "https://www.bilibili.com/"
+                dsFactory.setUserAgent(Http.userAgent).setDefaultRequestProperties(mapOf("Referer" to referer))
+            }
+            val ds = dsFactory
                 .setConnectTimeoutMs(20000)
                 .setReadTimeoutMs(30000)
             val mediaSource = if (isHls) {

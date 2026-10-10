@@ -77,16 +77,22 @@ object ListenPlayer {
                     lines.firstOrNull { hostOf(it) != exclude } ?: lines.firstOrNull()
                 val flv = pickLine(info.flvLines, recHost)
                 val hls = pickLine(info.hlsLines, recHost)
+                // CDN 线路全空时才用 PCDN(裸IP) 兜底;PCDN 走 upsig 防盗链,需 App UA + 无 Referer(与录制侧一致)
+                val flvP = if (flv == null && hls == null) pickLine(info.flvPcdnLines, recHost) else null
+                val hlsP = if (flv == null && hls == null && flvP == null) pickLine(info.hlsPcdnLines, recHost) else null
                 val url: String
                 val isHls: Boolean
-                if (flv != null) { url = flv; isHls = false }
-                else if (hls != null) { url = hls; isHls = true }
+                val isPcdn: Boolean
+                if (flv != null) { url = flv; isHls = false; isPcdn = false }
+                else if (hls != null) { url = hls; isHls = true; isPcdn = false }
+                else if (flvP != null) { url = flvP; isHls = false; isPcdn = true }
+                else if (hlsP != null) { url = hlsP; isHls = true; isPcdn = true }
                 else { finishError(roomId, "该直播暂无可用线路"); return@Thread }
-                Logger.i("Listen", "[player] room=$roomId 选线=${if (isHls) "HLS" else "FLV"} url=${url.take(120)} (flv=${info.flvLines.size}条 hls=${info.hlsLines.size}条 录制节点=${recHost ?: "无"})")
-                Logger.i("Listen", "[player] 构建播放器 url=${url.take(90)} isHls=$isHls")
+                Logger.i("Listen", "[player] room=$roomId 选线=${if (isHls) "HLS" else "FLV"}${if (isPcdn) " PCDN" else ""} url=${url.take(120)} (flv=${info.flvLines.size}条/${info.flvPcdnLines.size}pc hls=${info.hlsLines.size}条/${info.hlsPcdnLines.size}pc 录制节点=${recHost ?: "无"})")
+                Logger.i("Listen", "[player] 构建播放器 url=${url.take(90)} isHls=$isHls pcdn=$isPcdn")
                 mainHandler.post {
                     if (s != seq) return@post
-                    prepareAndPlay(roomId, s, url, isHls)
+                    prepareAndPlay(roomId, s, url, isHls, isPcdn)
                 }
             } catch (e: Exception) {
                 Logger.e("Listen", "[player] 取流异常: ${e.message}")
@@ -95,16 +101,21 @@ object ListenPlayer {
         }, "ListenStream").apply { isDaemon = true; start() }
     }
 
-    private fun prepareAndPlay(roomId: Long, s: Long, url: String, isHls: Boolean) {
+    private fun prepareAndPlay(roomId: Long, s: Long, url: String, isHls: Boolean, isPcdn: Boolean = false) {
         val ctx = appCtx ?: return
         if (s != seq) return  // 已停止/切换,放弃
         try {
             currentRoomId = roomId
             playing = true
-            val referer = if (isHls) "https://live.bilibili.com/" else "https://www.bilibili.com/"
-            val ds = DefaultHttpDataSource.Factory()
-                .setUserAgent(Http.userAgent)
-                .setDefaultRequestProperties(mapOf("Referer" to referer))
+            // PCDN(裸IP) 节点走 upsig 防盗链:仅 B站 App UA + 无 Referer 放行(与录制侧 PCDN 指纹一致)
+            val dsFactory = DefaultHttpDataSource.Factory()
+            if (isPcdn) {
+                dsFactory.setUserAgent(Http.appUserAgent)
+            } else {
+                val referer = if (isHls) "https://live.bilibili.com/" else "https://www.bilibili.com/"
+                dsFactory.setUserAgent(Http.userAgent).setDefaultRequestProperties(mapOf("Referer" to referer))
+            }
+            val ds = dsFactory
                 .setConnectTimeoutMs(20000)
                 .setReadTimeoutMs(30000)
             val mediaSource = if (isHls) {
