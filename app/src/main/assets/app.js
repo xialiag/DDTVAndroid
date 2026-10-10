@@ -1,4 +1,4 @@
-/* ===== DDTV Android — UI 逻辑 v0.7.62 =====
+/* ===== DDTV Android — UI 逻辑 v0.7.63 =====
    结构:工具 → 图标 → 状态 → 主题 → 弹层 → 布局 → 各视图渲染 → 原生回调 → 操作 → 初始化
    模板规则:禁止内联样式(动态数据除外),一律用 app.css 里的类;图标用 ic() */
 'use strict';
@@ -246,7 +246,8 @@ function buildRoomListHtml() {
     const status = r.liveStatus===1?'直播中':r.liveStatus===2?'轮播中':'未开播';
     const pop = isLive ? ` · 人气${r.livePopularity||r.popularity||0}` : '';
     const speed = rec && r.recSpeed ? ` · ${fmtSpeed(r.recSpeed)}` : '';
-    const voiceTag = r.voiceRoom ? '<span class="voice-tag">语音</span>' : '';
+    // 电台/聊天室分区提示：显示具体分区名（点唱/交友/唱见电台…），仅作信息展示，不代表房间属性
+    const voiceTag = r.voiceRoom ? `<span class="voice-tag">${esc(r.areaName||'语音区')}</span>` : '';
     return `<div class="task-item${sel}${hasCover?' has-cover':''}" data-rid="${r.roomId}">
       ${hasCover?`<img class="ti-bg" src="${esc(imgUrl(cover))}" referrerpolicy="no-referrer" onerror="this.parentElement.classList.remove('has-cover');this.remove()">`:''}
       <div class="ti-shade"></div>
@@ -359,10 +360,8 @@ function showRoomMenu(rid, x, y) {
     document.body.appendChild(m);
   }
   const rec = r.recState === 'recording';
-  // 语音房（电台/聊天室）无视频流，强制仅录音频且不可关闭：不渲染音频开关项，只展示状态
-  const audioItem = r.voiceRoom
-    ? '<div class="ctx-item ctx-disabled">音频直播 · 仅音频</div>'
-    : `<div class="ctx-item" data-act="audio">${r.audioOnly?'✓ 仅录音频（开）':'仅录音频（关）'}</div>`;
+  // 电台/聊天室分区仅作提示，不强制：开关始终可切换（2026-10 修正）
+  const audioItem = `<div class="ctx-item" data-act="audio">${r.audioOnly?'✓ 仅录音频（开）':'仅录音频（关）'}${r.voiceRoom?'（电台/聊天室分区）':''}</div>`;
   m.innerHTML =
     `<div class="ctx-title">${esc(r.name||'房间 '+rid)}</div>` +
     `<div class="ctx-item" data-act="record">${rec?'停止录制':'立即录制'}</div>` +
@@ -687,10 +686,8 @@ function renderRoomDetail(rid, container) {
       <label class="switch"><input type="checkbox" ${r.autoRecord?'checked':''} onchange="setAutoRecord(${r.roomId},this.checked)"><span class="slider"></span></label></div>
     <div class="switch-row"><div class="sw-text"><div class="sw-label">弹幕监听</div><div class="sw-desc">连接弹幕服务器，实时显示</div></div>
       <label class="switch"><input type="checkbox" ${r.danmakuOpen?'checked':''} onchange="setDanmaku(${r.roomId},this.checked)"><span class="slider"></span></label></div>
-    ${r.voiceRoom
-      ? '<div class="switch-row"><div class="sw-text"><div class="sw-label">音频直播间</div><div class="sw-desc">语音房只有音频流，自动仅录音频</div></div></div>'
-      : `<div class="switch-row"><div class="sw-text"><div class="sw-label">仅录音频</div><div class="sw-desc">只拉取音频流录制，省流量（下次录制生效）</div></div>
-      <label class="switch"><input type="checkbox" ${r.audioOnly?'checked':''} onchange="setAudioOnlyRoom(${r.roomId},this.checked)"><span class="slider"></span></label></div>`}
+    <div class="switch-row"><div class="sw-text"><div class="sw-label">仅录音频</div><div class="sw-desc">${r.voiceRoom ? '电台/聊天室分区，默认开启（可关闭）' : '只拉取音频流录制，省流量（下次录制生效）'}</div></div>
+      <label class="switch"><input type="checkbox" ${r.audioOnly?'checked':''} onchange="setAudioOnlyRoom(${r.roomId},this.checked)"><span class="slider"></span></label></div>
     <div class="switch-row"><div class="sw-text"><div class="sw-label">开播提醒</div><div class="sw-desc">开播/下播时发送系统通知</div></div>
       <label class="switch"><input type="checkbox" ${r.remind?'checked':''} onchange="setRemind(${r.roomId},this.checked)"><span class="slider"></span></label></div>
     <div class="switch-row"><div class="sw-text"><div class="sw-label">录制清晰度</div></div>
@@ -2097,7 +2094,6 @@ function togglePause() {
 function setDanmaku(rid,on) { AndroidBridge.setDanmakuOpen(rid,on); }
 function setAudioOnlyRoom(rid,on) {
   const r = (state.rooms||[]).find(x=>x.roomId===rid);
-  if (r && r.voiceRoom) { toast('语音直播间仅录音频，不可关闭', 'err'); return; }
   try { AndroidBridge.setAudioOnly(rid,on); } catch(e){}
   if (r) r.audioOnly = on;
   toast(on?'已开启仅录音频（下次录制生效）':'已关闭仅录音频','ok');

@@ -124,8 +124,10 @@ data class RoomCard(
         return if (n.isEmpty() || n.startsWith("房间 ") || n.startsWith("Room")) "Room$roomId" else n
     }
 
-    /** 实际是否仅录音频：语音房强制 audioOnly（无视频流），普通房看用户开关 */
-    val effectiveAudioOnly: Boolean get() = audioOnly || voiceRoom
+    /** 实际是否仅录音频：完全跟随用户开关。
+     *  电台/聊天室分区（voiceRoom）仅用于首次识别时给默认值（audioOnly=true）与 UI 提示，不再强制——
+     *  分区内也存在有视频流的房间，强制会导致「只能录音频」无法关闭（2026-10 修正）。 */
+    val effectiveAudioOnly: Boolean get() = audioOnly
 }
 
 /** 弹幕消息 */
