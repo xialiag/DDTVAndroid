@@ -288,9 +288,12 @@ object LiveRecorder {
             }
 
             // 2. 选择模式
-            val mode = when (recordMode) {
-                "flv" -> "flv"
-                "hls" -> "hls"
+            // 仅录音频时纯音频只在 FLV(http_stream) 形态生效（实测 media_type=1 对 HLS ts/fmp4 不过滤视频轨），
+            // 故 audioOnly 强制 FLV 优先，避免 auto/hls 模式误拉 HLS 混合流白耗流量；无 FLV 时才退回 HLS 录混合流+抽轨
+            val mode = when {
+                card.effectiveAudioOnly && info.flvUrl.isNotEmpty() -> "flv"
+                recordMode == "flv" -> "flv"
+                recordMode == "hls" -> "hls"
                 else -> if (info.hlsUrl.isNotEmpty()) "hls" else "flv"
             }
 
