@@ -500,12 +500,69 @@ object BiliLiveApi {
                 token = Json.obj(data, "token")
             )
         } catch (e: Exception) {
-            Logger.w("Api", "getDanmuServer 异常 room=$roomId: ${e.message}")
+            Logger.w("Api", "getDanmuServer 异常: ${e.message}")
             null
         }
     }
 
-    /** 动态 buvid3（对齐原版 DDTV AccountBuvid：UUID + 时间戳 + infoc，每次请求新生成） */
+    /**
+     * 发送直播弹幕（移植 DDTV Core/RuntimeObject/Danmu.cs SendDanmu）。
+     * 走 HTTP POST {LIVE_DOMAIN}/msg/send（web 端/GUI 版同款），**不依赖弹幕 WebSocket**。
+     * @return (是否成功, 原因)。成功判定 code==0；失败把 B 站 message/code 如实上报（csrf 失效/未登录/风控/禁言等）。
+     */
+    fun sendDanmaku(roomId: Long, text: String): Pair<Boolean, String> {
+        if (text.isBlank()) return false to "弹幕内容为空"
+        val acc = AccountManager.account ?: return false to "未登录"
+        if (acc.csrf.isEmpty()) return false to "缺少登录凭证(csrf)，请重新登录"
+        return try {
+            val form = linkedMapOf(
+                "color" to "16777215",
+                "fontsize" to "25",
+                "mode" to "1",
+                "msg" to text,
+                "rnd" to (System.currentTimeMillis() / 1000).toString(),
+                "roomid" to roomId.toString(),
+                "csrf" to acc.csrf,
+                "csrf_token" to acc.csrf
+            )
+            // 登录 cookie 由 Http.cookie 携带，这里只补 Referer 对齐 web 端
+            val body = Http.postForm(
+                "$LIVE_DOMAIN/msg/send", form,
+                referer = "$LIVE_WEB_DOMAIN/$roomId"
+            )
+            val obj = try { JSONObject(body) } catch (_: Exception) { null }
+            if (obj == null) return false to "发送失败(响应解析失败): ${body.take(80)}"
+            val code = obj.optInt("code", -1)
+            if (code == 0) return true to "已发送"
+            val msg = obj.optString("message").ifBlank { obj.optString("msg") }
+            Logger.w("Api", "发送弹幕失败 room=$roomId code=$code msg=$msg")
+            false to (msg.ifBlank { "发送被拒绝(code=$code)" })
+        } catch (e: Exception) {
+            Logger.w("Api", "发送弹幕异常 room=$roomId: ${e.message}")
+            false to "发送异常: ${e.message}"
+        }
+    }
+
+    /** 直连 room_init 查真实直播状态(绕开内存卡片可能残留的旧值)；失败返回 null */
+    fun queryLiveStatus(roomId: Long): Int? {
+        val info = roomInit(roomId) ?: return null
+        return info.optInt("live_status", 0)
+    }
+
+    /**
+     * 连续确认是否已下播(对齐原版 ConfirmStopLive)：直连 API 查真值，避免内存/接口失败残留的"开播"缓存导致无限重连。
+     * @return true=确认已下播；false=仍在播或查询失败（不为未知状态误判下播）
+     */
+    fun confirmStopLive(roomId: Long, attempts: Int = 2, gapMs: Long = 1500): Boolean {
+        repeat(attempts) { i ->
+            val st = queryLiveStatus(roomId)
+            if (st == 0) return true   // 仅 0=未开播 判定为下播；2=轮播（可能仍有流）交给外层原逻辑处理
+            if (i < attempts - 1) try { Thread.sleep(gapMs) } catch (_: InterruptedException) { return false }
+        }
+        return false
+    }
+
+
     fun freshBuvid(): String {
         val ts = (System.currentTimeMillis() / 1000).toString().takeLast(5)
         return java.util.UUID.randomUUID().toString().uppercase() + ts + "infoc"

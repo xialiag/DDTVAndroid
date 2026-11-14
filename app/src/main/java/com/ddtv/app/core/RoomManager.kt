@@ -181,14 +181,13 @@ object RoomManager {
                 card.popularity = detail.online
             }
         } catch (_: Exception) {}
-        // 添加时已在直播 → 立即启动弹幕/录制/心跳，不等下一轮轮询（最长 pollInterval 秒）
-        // 添加时已真实开播(status=1) → 立即启动弹幕/录制/心跳，不等下一轮轮询；
+        // 添加时已在直播 → 立即启动弹幕/录制，不等下一轮轮询（最长 pollInterval 秒）
+        // 添加时已真实开播(status=1) → 立即启动弹幕/录制，不等下一轮轮询；
         // 轮播(2)不录制不连弹幕，等真实开播
         // 并把 liveStatusPrev 置为已开播，避免首轮轮询重复触发“开播了”事件
         if (card.liveStatus == 1) {
             card.liveStatusPrev = true
             if (card.danmakuOpen) ensureDanmaku(card)
-            if (settings.watchHeartbeat) WatchHeartbeat.register(card.roomId, card.uid)
             if (card.autoRecord) ensureRecording(card)
         }
         return 1
@@ -216,11 +215,10 @@ object RoomManager {
             rooms[u.roomId] = card
             saveRooms()
             notifyRoomsChanged()
-            // 添加时已真实开播(status=1) → 立即启动弹幕/录制/心跳，不等下一轮轮询；轮播(2)不录制
+            // 添加时已真实开播(status=1) → 立即启动弹幕/录制，不等下一轮轮询；轮播(2)不录制
             if (card.liveStatus == 1) {
                 card.liveStatusPrev = true
                 if (card.danmakuOpen) ensureDanmaku(card)
-                if (settings.watchHeartbeat) WatchHeartbeat.register(card.roomId, card.uid)
                 if (card.autoRecord) ensureRecording(card)
             }
             return 1
@@ -518,13 +516,13 @@ object RoomManager {
             card.liveStatusPrev = true
             if (card.autoRecord) ensureRecording(card)
             if (card.danmakuOpen) ensureDanmaku(card)
-            if (settings.watchHeartbeat) WatchHeartbeat.register(card.roomId, card.uid)
         } else if (!isLive && wasLive) {
             // 下播（日志经 notifyLog 打一条"直播结束";不再单独 Logger.i 避免前端/DebugServer 双打）
             notifyLog(card.roomId, "info", "直播结束")
             card.liveStatusPrev = false
             stopRecording(card)
             stopDanmaku(card.roomId)  // 下播即断开弹幕，避免对已下播房间持续重连/显示"连接中"
+            WatchHeartbeat.unregister(card.roomId)  // 下播即停观看心跳，避免多跑一个间隔的 E/X 与残留 session 阻塞再开播的 re-register
             saveDanmakuFile(card)
             notifyLiveEnd(card.roomId)
         }
@@ -748,11 +746,10 @@ object RoomManager {
         danmakuClients.clear()
     }
 
-    /** 发送弹幕（需登录），返回 (是否成功, 原因) */
+    /** 发送弹幕（需登录），返回 (是否成功, 原因)。走 HTTP，不依赖弹幕 WebSocket 是否已连接/已开启 */
     fun sendDanmaku(roomId: Long, text: String): Pair<Boolean, String> {
-        val client = danmakuClients[roomId] ?: return (false to "弹幕未连接(未开启该房间弹幕)")
-        if (!client.connected) return (false to "弹幕连接未就绪")
-        return client.sendDanmaku(text)
+        if (!rooms.containsKey(roomId)) return (false to "房间不存在")
+        return BiliLiveApi.sendDanmaku(roomId, text)
     }
 
     private fun onDanmaku(item: DanmakuItem) {
@@ -793,8 +790,11 @@ object RoomManager {
     /** 实时弹幕流水文件(roomId → 当天 danmu_<HH-mm-ss>.jsonl):每条弹幕/礼物即时追加,防 buffer 丢失 */
     private val liveDanmakuFiles = ConcurrentHashMap<Long, java.io.File>()
 
-    /** 弹幕/礼物到达即追加写实时流水(每行一条 JSON);写入失败静默不影响主流程 */
+    /** 弹幕/礼物到达即追加写实时流水(每行一条 JSON);仅录制会话内落盘——未录制时只看弹幕不存档。
+     *  写入失败静默不影响主流程 */
     fun appendLiveDanmaku(item: DanmakuItem) {
+        // 未录制不落盘：导入监控/只看弹幕面板时不应产生 danmu_*.jsonl(礼物同此规则)
+        if (!LiveRecorder.isRecording(item.roomId)) return
         try {
             val f = liveDanmakuFiles.getOrPut(item.roomId) {
                 val card = rooms[item.roomId]
@@ -873,14 +873,20 @@ object RoomManager {
      * 保存弹幕存档（对应原版 DDTV Danmu.SaveDanmu）
      * 写入 {输出目录}/{主播}/{日期}/danmu_{HH-mm-ss}.json
      */
+    @Synchronized  // 下播/录制结束可能并发调用同一房间，序列化避免重复写同名文件
     fun saveDanmakuFile(card: RoomCard) {
-        // 数据源优先实时流水(异常退出后 buffer 可能丢失/不全,jsonl 有全量);
-        // 流水条数 >= 内存缓冲时才以流水为准(正常情况两者一致)
-        val buffered = danmakuBuffer[card.roomId]
+        // 仅录制会话产生的弹幕存档：实时流水文件只在录制中创建(见 appendLiveDanmaku)。
+        // 未录制房间只有内存缓冲(供面板查看)，不落盘——覆盖"导入监控未开录制"及下播/删房等非录制触发点。
         val liveF = liveDanmakuFiles[card.roomId]
-        val fromFile = if (liveF != null && liveF.exists()) readJsonlDanmaku(liveF) else emptyList()
-        val items: List<DanmakuItem> = if (fromFile.size >= (buffered?.size ?: 0)) fromFile else (buffered ?: emptyList())
-        if (items.isEmpty()) return
+        if (liveF == null || !liveF.exists()) return
+        // 流水文件仅在录制会话内写入，是本次录制的权威数据；缓冲可能含录制开始前的监听期弹幕，故只认流水。
+        // 流水为空 = 本次录制期间无弹幕，不落盘（避免把监听期缓冲误存成录制存档）
+        val items: List<DanmakuItem> = readJsonlDanmaku(liveF)
+        if (items.isEmpty()) {
+            try { liveF.delete() } catch (_: Exception) {}
+            liveDanmakuFiles.remove(card.roomId)
+            return
+        }
         try {
             val dir = java.io.File(outputDir, sanitizeFileName(card.dirName()) +
                     java.io.File.separator + java.text.SimpleDateFormat("yyyy-MM-dd", java.util.Locale.CHINA).format(java.util.Date()))
@@ -1019,12 +1025,8 @@ object RoomManager {
             .putString("sub_font", settings.subFont)
             .apply()
         LiveRecorder.applySettings(settings)
-        // 小心心开关即时生效
-        if (settings.watchHeartbeat) {
-            getRooms().filter { it.liveStatus == 1 }.forEach { WatchHeartbeat.register(it.roomId, it.uid) }
-        } else {
-            WatchHeartbeat.stopAll()
-        }
+        // 小心心开关即时生效：关闭则停所有观看心跳；开启后由"听直播(观看)"时注册（对齐原版）
+        if (!settings.watchHeartbeat) WatchHeartbeat.stopAll()
     }
 
     fun saveRooms() {

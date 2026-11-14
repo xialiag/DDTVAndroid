@@ -22,18 +22,24 @@ object WatchHeartbeat {
     }
 
     private val sessions = ConcurrentHashMap<Long, Session>()
+    private val sessionLock = Any()
 
     fun register(roomId: Long, anchorUid: Long) {
+        // 开关判断收口在管理器内（对齐原版 WatchHeartbeatManager.Register）
+        if (!RoomManager.settings.watchHeartbeat) return
         if (roomId <= 0) return
-        if (sessions.containsKey(roomId)) return
-        val session = Session(roomId, anchorUid)
-        sessions[roomId] = session
-        session.thread = Thread({ run(session) }, "Heartbeat-$roomId").also { it.isDaemon = true; it.start() }
+        // 锁内检查-创建：避免并发 register 同一房间启动孤儿会话（对齐原版 _sessionLock 修复）
+        synchronized(sessionLock) {
+            if (sessions.containsKey(roomId)) return
+            val session = Session(roomId, anchorUid)
+            sessions[roomId] = session
+            session.thread = Thread({ run(session) }, "Heartbeat-$roomId").also { it.isDaemon = true; it.start() }
+        }
         log("房间 $roomId 观看时长心跳启动")
     }
 
     fun unregister(roomId: Long) {
-        sessions.remove(roomId)?.let { it.stopFlag.set(true) }
+        synchronized(sessionLock) { sessions.remove(roomId) }?.let { it.stopFlag.set(true) }
     }
 
     fun stopAll() {

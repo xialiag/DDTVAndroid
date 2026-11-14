@@ -14,7 +14,7 @@ import java.util.zip.Inflater
 /**
  * 弹幕 WebSocket 客户端（移植 DDTV Core/LiveChat/LiveChatListener.cs）
  * 协议：认证 op=7 → 心跳 op=2(10s) → 接收 op=3(人气)/op=5(消息)
- * 压缩：version=2 zlib / version=3 brotli；支持 op=1 发送弹幕（需登录）
+ * 压缩：version=2 zlib / version=3 brotli；接收弹幕需登录以带 uid。发送弹幕走 HTTP POST /msg/send（见 BiliLiveApi），不走 WS。
  */
 class DanmakuClient(private val card: RoomCard) {
 
@@ -44,49 +44,6 @@ class DanmakuClient(private val card: RoomCard) {
         try { ws?.close() } catch (_: Exception) {}
         ws = null
         listener?.onStatus(card.roomId, false, "已断开")
-    }
-
-    /** 弹幕发送回执队列（op=1 响应，按发送顺序 complete；发送结果以服务器回执为准） */
-    private val sendAcks = java.util.concurrent.ConcurrentLinkedQueue<java.util.concurrent.CompletableFuture<Pair<Int, String>>>()
-
-    /** 发送弹幕（需登录），返回 (是否发出, 原因)。等待服务器 op=1 回执（3s 超时），
-     *  不再"发完即 true"——csrf 错误/风控/未登录等失败会如实上报给 UI */
-    fun sendDanmaku(text: String): Pair<Boolean, String> {
-        val client = ws ?: return (false to "弹幕未连接")
-        if (!connected) return (false to "弹幕连接未就绪")
-        if (text.isBlank()) return (false to "弹幕内容为空")
-        val acc = AccountManager.account ?: return (false to "未登录")
-        if (acc.csrf.isEmpty()) return (false to "缺少登录凭证(csrf)，请重新登录")
-        return try {
-            val body = JSONObject().apply {
-                put("mode", 1)
-                put("msg", text)
-                put("roomid", card.roomId)
-                put("bubble", 0)
-                put("csrf", acc.csrf)
-                put("csrf_token", acc.csrf)
-                put("rnd", (System.currentTimeMillis() / 1000))
-                put("color", 16777215)
-                put("fontsize", 25)
-            }
-            val future = java.util.concurrent.CompletableFuture<Pair<Int, String>>()
-            sendAcks.offer(future)
-            client.send(pack(1, body.toString().toByteArray()))
-            val (code, msg) = try {
-                future.get(3, java.util.concurrent.TimeUnit.SECONDS)
-            } catch (e: java.util.concurrent.TimeoutException) {
-                sendAcks.remove(future)
-                (-1 to "发送超时，服务器未确认")
-            } catch (e: Exception) {
-                sendAcks.remove(future)
-                (-1 to "发送中断: ${e.message}")
-            }
-            if (code == 0) (true to "已发送")
-            else (false to (msg.ifBlank { "发送被拒绝(code=$code)" }))
-        } catch (e: Exception) {
-            Logger.w("Danmaku", "[${card.roomId}] 发送弹幕失败: ${e.message}")
-            (false to "发送异常: ${e.message}")
-        }
     }
 
     private fun connectLoop() {
@@ -301,18 +258,6 @@ class DanmakuClient(private val card: RoomCard) {
 
     private fun dispatch(op: Int, body: ByteArray) {
         when (op) {
-            1 -> {
-                // 弹幕发送回执：成功 code=0；失败 code!=0 带 msg（csrf 校验失败/未登录/风控等）
-                val future = sendAcks.poll()
-                if (future != null) {
-                    try {
-                        val obj = JSONObject(String(body, Charsets.UTF_8))
-                        future.complete(obj.optInt("code", -1) to obj.optString("msg", ""))
-                    } catch (_: Exception) {
-                        future.complete(-1 to "回执解析失败")
-                    }
-                }
-            }
             3 -> {
                 if (body.size >= 4) {
                     val popularity = (body[0].toLong() and 0xFF shl 24) or
@@ -364,8 +309,10 @@ class DanmakuClient(private val card: RoomCard) {
                 val color = info.optInt(0, 0) and 0xFFFFFF
                 DanmakuItem(roomId = roomId, type = "DANMU_MSG", user = uname, uid = uid, content = content, color = color)
             }
-            cmd == "SEND_GIFT" -> {
-                val data = obj.optJSONObject("data") ?: return
+            cmd == "SEND_GIFT" || cmd == "SEND_GIFT_V2" -> {
+                // V2 为 protobuf(pb base64)，先解码映射为旧版 data 结构，再走同一渲染
+                val data: JSONObject = (if (cmd == "SEND_GIFT_V2") SendGiftV2Parser.decodeToLegacyGiftData(obj) else obj.optJSONObject("data"))
+                    ?: return
                 val giftName = data.optString("giftName", "礼物")
                 val num = data.optInt("num", 1)
                 val price = data.optLong("price", 0)

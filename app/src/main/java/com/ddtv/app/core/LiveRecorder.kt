@@ -248,7 +248,7 @@ object LiveRecorder {
             // 1. 获取流信息（audioOnly 时优先纯音频流；语音房无视频流，强制 audioOnly）
             val info = BiliLiveApi.getStreamInfo(roomId, card.quality, card.effectiveAudioOnly)
             if (info == null) {
-                // 流不可用：查直播状态决定
+                // 流不可用：查直播状态决定（内存状态可能因接口失败残留"开播"，再直连 API 连续确认）
                 when (RoomManager.getLiveStatus(roomId)) {
                     0 -> {
                         Logger.i("Recorder", "[${card.name}] 直播已结束，完成录制")
@@ -262,6 +262,12 @@ object LiveRecorder {
                         break
                     }
                     else -> {
+                        // 内存显示在播但取不到流：先直连 API 连续确认（残留"开播"缓存时其实就是下播了）
+                        if (BiliLiveApi.confirmStopLive(roomId)) {
+                            Logger.i("Recorder", "[${card.name}] 直播已结束(确认)，完成录制")
+                            notifyLiveEnded(roomId, card.files.toList(), "live_ended")
+                            break
+                        }
                         // 直播中(1)但取不到流：B 站对付费/私密/权限受限直播的实际行为
                         // 就是「live_status=1 但未购买/无门票用户 playurl=null」（实测 2026-09-07，
                         // all_special_types 从不含 1；原版 C# HLS.cs:365 靠取流失败判 PaidLiveStream）。
@@ -348,7 +354,7 @@ object LiveRecorder {
                     }
                     continue
                 }
-                if (RoomManager.getLiveStatus(roomId) == 0) {
+                if (RoomManager.getLiveStatus(roomId) == 0 || BiliLiveApi.confirmStopLive(roomId)) {
                     notifyLiveEnded(roomId, card.files.toList(), "live_ended")
                     break
                 }

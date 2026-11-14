@@ -118,7 +118,7 @@ function cycleTheme() {
 let _toastTimer = null;
 function toast(msg, type) {
   const el = $('#toast'); el.textContent = msg; el.className = 'toast show ' + (type||'ok');
-  clearTimeout(_toastTimer); _toastTimer = setTimeout(() => el.className = 'toast hidden', 2400);
+  clearTimeout(_toastTimer); _toastTimer = setTimeout(() => el.className = 'toast hidden', type==='err'?4200:2400);
 }
 
 /* ========== 模态框(自绘,替代原生 prompt/confirm) ========== */
@@ -719,8 +719,8 @@ function renderDanmakuPanel() {
       <button class="btn btn-sec btn-sm" onclick="clearDanmaku()">清空</button></div>
     <div class="dm-stream" id="dmStream"><div class="dm-empty">正在获取弹幕状态…</div></div>
     <div class="dm-input-row">
-      <input id="dmInput" placeholder="${state.account&&state.account.logged?'发送弹幕…':'登录后可发送'}" ${state.account&&state.account.logged?'':'disabled'}>
-      <button class="btn btn-primary btn-sm" onclick="sendDm()" ${state.account&&state.account.logged?'':'disabled'}>${ic('send',12)} 发送</button></div></div>`;
+      <input id="dmInput" placeholder="${state.account&&state.account.logged?'发送弹幕…（Enter 发送）':'登录后可发送弹幕'}" ${state.account&&state.account.logged?'':'disabled'}>
+      <button class="btn btn-primary btn-sm" onclick="${state.account&&state.account.logged?'sendDm()':'goLogin()'}" ${state.account&&state.account.logged?'':'title="请先登录"'}>${ic('send',12)} ${state.account&&state.account.logged?'发送':'登录'}</button></div></div>`;
   // 自定义下拉(替代原生 select)
   renderCSelect($('#dmRoomSel'),
     state.rooms.map(r=>({v:String(r.roomId), label:r.name||('房间 '+r.roomId)})),
@@ -768,11 +768,30 @@ function refreshDanmakuStatus() {
 
 function switchDanmakuRoom(rid) { state.danmakuRoom = Number(rid); try { localStorage.setItem('ddtv_dmroom', String(rid)); } catch(e){} renderEditor(); }
 function clearDanmaku() { const s=$('#dmStream'); if(s) s.innerHTML=''; }
+function goLogin() { switchView('account'); }
 
+let _dmSending = false;
 function sendDm() {
-  const input=$('#dmInput'), text=(input.value||'').trim(); if(!text) return;
-  const r=JSON.parse(AndroidBridge.sendDanmaku(state.danmakuRoom,text));
-  toast(r.msg, r.code<0?'err':'ok'); if(r.code>0) input.value='';
+  if (_dmSending) return;                       // 防连点重复发送
+  const input=$('#dmInput'); if(!input) return;
+  const text=(input.value||'').trim(); if(!text) return;
+  const btn=document.querySelector('.dm-input-row .btn'); 
+  _dmSending=true;
+  if(btn){ btn.disabled=true; btn._oldText=btn.innerHTML; btn.innerHTML='发送中…'; }
+  let r;
+  try { r=JSON.parse(AndroidBridge.sendDanmaku(state.danmakuRoom,text)); }
+  catch(e){ r={code:-1,msg:'发送失败: '+(e&&e.message||e)}; }
+  finally { _dmSending=false; if(btn){ btn.disabled=false; btn.innerHTML=btn._oldText||(ic('send',12)+' 发送'); } }
+  if(r.code>0){
+    input.value='';
+    // 本地回显自己的弹幕（WS 回推可能延迟/未连上），user 用当前账号名；占用去重槽避免 WS 回推重复显示
+    const me=state.account&&state.account.uname?state.account.uname:'我';
+    try { appendDanmaku({roomId:state.danmakuRoom,type:'DANMU_MSG',user:me,content:text,color:0xFFFFFF}, false, false); } catch(e){}
+    toast(r.msg||'已发送','ok');
+    if(btn){ input.focus(); }                   // 发完保持焦点，便于连续发送
+  } else {
+    toast(r.msg||'发送失败','err');             // 失败保留输入内容，方便修改重试
+  }
 }
 
 function loadDanmakuHistory() {
@@ -1315,10 +1334,13 @@ function renderAccount() {
       <div id="followList"><div class="sb-empty">加载中…</div></div>
     </div>
   </div>`;
-  // 关注列表（账号页下方，登录后展示；默认「全部」）
+  // 关注列表（账号页下方，登录后展示；默认「全部」tagid=-1，不依赖分组已加载即可拉全量）
   if (state.followGroupId==null) state.followGroupId = -1;
   renderFollowGroups();
-  if (!state.followGroups.length) loadFollowGroups(); else loadFollowUsers();
+  // 分组仅用于顶部筛选标签：未加载则异步补拉；关注列表本身与分组无关，立即拉取，
+  // 不能等 follow_groups 事件再触发（分组为空/接口失败时 changed=false 不会重渲染 → 永远停在“加载中…”）
+  if (!state.followGroups.length) loadFollowGroups();
+  loadFollowUsers();
 }
 
 function startQr() {
@@ -1423,7 +1445,7 @@ function renderSettings() {
     <div class="switch-row"><div class="sw-text"><div class="sw-label">修复后删除源文件</div><div class="sw-desc">修复/转码成功后删除原始文件</div></div>
       <label class="switch"><input type="checkbox" id="setRepDel" onchange="saveSettings()"><span class="slider"></span></label></div>
     <h2>账号</h2>
-    <div class="switch-row"><div class="sw-text"><div class="sw-label">小心心挂机</div><div class="sw-desc">上报观看时长，需登录</div></div>
+    <div class="switch-row"><div class="sw-text"><div class="sw-label">小心心挂机</div><div class="sw-desc">仅在「听直播」时上报观看时长(计入人气/观众)，需登录</div></div>
       <label class="switch"><input type="checkbox" id="setHeart" onchange="saveSettings()"><span class="slider"></span></label></div>
     <h2>通知</h2>
     <div class="switch-row"><div class="sw-text"><div class="sw-label">开播/下播提醒</div><div class="sw-desc">全局开关，房间详情可单独关闭</div></div>
@@ -1845,12 +1867,12 @@ function onNativeEvent(evt) {
     case 'files_changed': loadFiles(); if(state.view==='tools') renderToolsPanel(); else if(state.view==='files'){ updateFileListPageSilent(); renderSidebar(); } break;
     case 'file_picked': if(state.view==='tools') onFilePicked(evt.path); break;
     case 'follow_groups':
-      // 异步分组加载完成；只有集合变化才重渲染，避免空分组时 renderEditor→renderAccount 无限递归
+      // 异步分组加载完成；只刷新分组标签，不整页重渲染（避免重复触发 loadFollowUsers 与递归风险）
       {
         const groups = evt.groups || [];
         const changed = JSON.stringify(groups) !== JSON.stringify(state.followGroups);
         state.followGroups = groups;
-        if (changed && state.view === 'account') renderEditor();
+        if (changed && state.view === 'account') renderFollowGroups();
       }
       break;
     case 'follows_loaded':

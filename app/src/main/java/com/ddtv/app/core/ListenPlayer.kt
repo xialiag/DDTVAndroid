@@ -170,6 +170,8 @@ object ListenPlayer {
                 playWhenReady = true
             }
             player = p
+            // 对齐原版：App 内真正开始播放(=观看)才上报观看时长/进房；停止/暂停/切房/失败即注销(见 releaseAndClear)
+            WatchHeartbeat.register(roomId, RoomManager.getRoom(roomId)?.uid ?: 0L)
         } catch (e: Exception) {
             Logger.e("Listen", "[player] 播放器构建失败: ${e.message}")
             if (s == seq) finishError(roomId, "播放器初始化失败")
@@ -192,6 +194,9 @@ object ListenPlayer {
     }
 
     private fun releaseAndClear() {
+        // 停止观看 → 注销观看心跳(对齐原版：播放窗关闭即 Unregister)
+        val rid = currentRoomId
+        if (rid != 0L) WatchHeartbeat.unregister(rid)
         seq++  // 使所有在途操作失效
         releasePlayer()
         currentRoomId = 0L
@@ -207,6 +212,7 @@ object ListenPlayer {
         if (p != null && (p.playWhenReady || !paused)) {
             // 播放中/缓冲中 → 暂停(保留房间号)
             Logger.i("Listen", "[player] 点击暂停(room=$rid)")
+            WatchHeartbeat.unregister(rid)  // 暂停=不再观看，停止上报
             seq++
             releasePlayer()
             paused = true
