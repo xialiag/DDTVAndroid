@@ -684,8 +684,13 @@ function renderRoomDetail(rid, container) {
     <h2>房间设置</h2>
     <div class="switch-row"><div class="sw-text"><div class="sw-label">开播自动录制</div><div class="sw-desc">检测到开播后自动开始录制</div></div>
       <label class="switch"><input type="checkbox" ${r.autoRecord?'checked':''} onchange="setAutoRecord(${r.roomId},this.checked)"><span class="slider"></span></label></div>
-    <div class="switch-row"><div class="sw-text"><div class="sw-label">弹幕监听</div><div class="sw-desc">连接弹幕服务器，实时显示</div></div>
+    <div class="switch-row"><div class="sw-text"><div class="sw-label">连接弹幕</div><div class="sw-desc">接收弹幕消息与记录弹幕文件。<b>登录状态下会以你的账号进入该直播间，主播可见</b>。关闭后录制/听直播不受影响，仅不记录弹幕。</div></div>
       <label class="switch"><input type="checkbox" ${r.danmakuOpen?'checked':''} onchange="setDanmaku(${r.roomId},this.checked)"><span class="slider"></span></label></div>
+    ${(state.settings&&state.settings.heartbeatGlobal)?`
+    <div class="switch-row"><div class="sw-text"><div class="sw-label">小心心</div><div class="sw-desc">本房间是否上报观看时长(计入亲密度)。主播不可见，与弹幕无关。</div></div>
+      <label class="switch"><input type="checkbox" ${r.heartbeatOn?'checked':''} onchange="setRoomHeartbeat(${r.roomId},this.checked)"><span class="slider"></span></label></div>
+    ${r.heartbeatOn?`<div class="switch-row"><div class="sw-text"><div class="sw-label">上报档位</div><div class="sw-desc">仅听直播=播放期间上报;开播即挂=开播期间无人值守上报(有风控风险)</div></div>
+      <div class="sw-right"><div id="heartModeSel"></div></div></div>`:''}`:''}
     <div class="switch-row"><div class="sw-text"><div class="sw-label">仅录音频</div><div class="sw-desc">${r.voiceRoom ? '电台/聊天室分区，默认开启（可关闭）' : '只拉取音频流录制，省流量（下次录制生效）'}</div></div>
       <label class="switch"><input type="checkbox" ${r.audioOnly?'checked':''} onchange="setAudioOnlyRoom(${r.roomId},this.checked)"><span class="slider"></span></label></div>
     <div class="switch-row"><div class="sw-text"><div class="sw-label">开播提醒</div><div class="sw-desc">开播/下播时发送系统通知</div></div>
@@ -695,6 +700,12 @@ function renderRoomDetail(rid, container) {
   // 自定义下拉(替代原生 select)
   const qnOpts = Object.entries(qnLabels).map(([k,v])=>({v:k,label:v}));
   renderCSelect($('#qualitySel'), qnOpts, String(r.quality), v => setQuality(r.roomId, Number(v)));
+  if ($('#heartModeSel')) {
+    renderCSelect($('#heartModeSel'),
+      [{v:'listen',label:'仅跟随听直播'},{v:'live',label:'开播即挂'},{v:'off',label:'不启用'}],
+      r.heartbeatMode||'listen',
+      v => setRoomHeartbeatMode(r.roomId, v));
+  }
 }
 
 /* ========== 弹幕面板 ========== */
@@ -1445,8 +1456,19 @@ function renderSettings() {
     <div class="switch-row"><div class="sw-text"><div class="sw-label">修复后删除源文件</div><div class="sw-desc">修复/转码成功后删除原始文件</div></div>
       <label class="switch"><input type="checkbox" id="setRepDel" onchange="saveSettings()"><span class="slider"></span></label></div>
     <h2>账号</h2>
-    <div class="switch-row"><div class="sw-text"><div class="sw-label">小心心挂机</div><div class="sw-desc">仅在「听直播」时上报观看时长(计入人气/观众)，需登录</div></div>
-      <label class="switch"><input type="checkbox" id="setHeart" onchange="saveSettings()"><span class="slider"></span></label></div>
+    <div class="switch-row"><div class="sw-text"><div class="sw-label">小心心总开关</div><div class="sw-desc">观看时长上报(计入粉丝勋章亲密度)。关闭后所有房间一律不上报;需登录。主播不可见。</div></div>
+      <label class="switch"><input type="checkbox" id="setHeartGlobal" onchange="saveSettings()"><span class="slider"></span></label></div>
+    <div class="switch-row"><div class="sw-text"><div class="sw-label">新房间默认档位</div><div class="sw-desc">仅跟随听直播=播放期间上报;开播即挂=房间开播即无人值守上报(有风控风险)</div></div>
+      <div class="sw-right"><div id="setHeartDefault"></div></div></div>
+    <div class="switch-row"><div class="sw-text"><div class="sw-label">小心心并发上限</div><div class="sw-desc">同时上报的房间数上限，超出跳过。过高易被B站判定刷时长(建议 3~8)</div></div>
+      <input type="number" id="setHeartMax" class="sw-input-num" min="1" max="50" value="5" onchange="saveSettings()"></div>
+    <h2>弹幕</h2>
+    <div class="switch-row"><div class="sw-text"><div class="sw-label">弹幕总开关</div><div class="sw-desc">关闭后所有房间断开弹幕连接，不再接收/记录弹幕</div></div>
+      <label class="switch"><input type="checkbox" id="setDmGlobal" onchange="saveSettings()"><span class="slider"></span></label></div>
+    <div class="switch-row"><div class="sw-text"><div class="sw-label">新房间默认连接弹幕</div><div class="sw-desc">默认关闭。开启后新加房间自动连弹幕(登录态下会以你的账号进入该直播间,主播可见)</div></div>
+      <label class="switch"><input type="checkbox" id="setDmDefault" onchange="saveSettings()"><span class="slider"></span></label></div>
+    <div class="switch-row"><div class="sw-text"><div class="sw-label">弹幕并发上限</div><div class="sw-desc">同时连接弹幕服务器的房间数上限，超出跳过(避免同时对大量直播间暴露身份)</div></div>
+      <input type="number" id="setDmMax" class="sw-input-num" min="1" max="100" value="10" onchange="saveSettings()"></div>
     <h2>通知</h2>
     <div class="switch-row"><div class="sw-text"><div class="sw-label">开播/下播提醒</div><div class="sw-desc">全局开关，房间详情可单独关闭</div></div>
       <label class="switch"><input type="checkbox" id="setRemind" onchange="saveSettings()"><span class="slider"></span></label></div>
@@ -1505,7 +1527,12 @@ function renderSettings() {
   if(s) { $('#setAuto').checked=s.autoRecord;
     $('#setAppend').checked=s.flvAppendOnReconnect!==false;
     $('#setSplitTitle').checked=s.splitByTitle; $('#setSplitH').value=s.splitSeconds?Math.round(s.splitSeconds/3600):0;
-    $('#setSplitG').value=s.splitSizeMB?Math.round(s.splitSizeMB/1024):0; $('#setRemux').checked=s.remuxAfterLive; $('#setRepDel').checked=s.repairDeleteSource!==false; $('#setHeart').checked=s.watchHeartbeat;
+    $('#setSplitG').value=s.splitSizeMB?Math.round(s.splitSizeMB/1024):0; $('#setRemux').checked=s.remuxAfterLive; $('#setRepDel').checked=s.repairDeleteSource!==false; $('#setHeartGlobal').checked=s.heartbeatGlobal;
+    $('#setHeartMax').value=s.heartbeatMaxRooms||5;
+    $('#setDmGlobal').checked=s.danmakuGlobal!==false;
+    $('#setDmDefault').checked=s.danmakuDefault===true;
+    $('#setDmMax').value=s.danmakuMaxRooms||10;
+    renderCSelect($('#setHeartDefault'), [{v:'listen',label:'仅跟随听直播'},{v:'live',label:'开播即挂(无人值守)'},{v:'off',label:'不启用'}], s.heartbeatDefault||'listen', v=>saveSettings());
     $('#setRemind').checked=s.remindLive; $('#setBlock').value=s.blockBarrage||''; $('#setFmt').value=s.fileNameFormat||'';
     $('#setAutoUpdate').checked=!!s.autoUpdate;
     $('#setDebug').checked=!!s.debugServer;
@@ -1519,7 +1546,13 @@ function saveSettings() {
   const s={pollInterval:Number($('#setPoll').dataset.value),autoRecord:$('#setAuto').checked,quality:Number($('#setQn').dataset.value),
     recordMode:$('#setMode').dataset.value,
     splitByTitle:$('#setSplitTitle').checked,splitSeconds:Number($('#setSplitH').value)*3600,splitSizeMB:Number($('#setSplitG').value)*1024,
-    remuxAfterLive:$('#setRemux').checked,watchHeartbeat:$('#setHeart').checked,remindLive:$('#setRemind').checked,
+    remuxAfterLive:$('#setRemux').checked,remindLive:$('#setRemind').checked,
+    heartbeatGlobal:$('#setHeartGlobal').checked,
+    heartbeatDefault:($('#setHeartDefault')&&$('#setHeartDefault').dataset.value)||'listen',
+    heartbeatMaxRooms:Math.max(1,Number($('#setHeartMax').value)||5),
+    danmakuGlobal:$('#setDmGlobal').checked,
+    danmakuDefault:$('#setDmDefault').checked,
+    danmakuMaxRooms:Math.max(1,Number($('#setDmMax').value)||10),
     repairDeleteSource:$('#setRepDel').checked,flvAppendOnReconnect:$('#setAppend').checked,
     blockBarrage:$('#setBlock').value.trim(),fileNameFormat:$('#setFmt').value.trim(),
     autoUpdate:$('#setAutoUpdate').checked,
@@ -2112,6 +2145,18 @@ function togglePause() {
     }
     AndroidBridge.toggleListenPlay();
   } catch(e){ _ctlBusyUntil = 0; if (ctl) ctl.classList.remove('busy'); }
+}
+function setRoomHeartbeat(rid,on){
+  try{ AndroidBridge.setRoomHeartbeat(rid,on); }catch(e){ toast('操作失败: '+e,'err'); return; }
+  const r=state.rooms.find(x=>x.roomId===rid); if(r) r.heartbeatOn=on;
+  toast(on?'本房间已启用小心心':'本房间已停用小心心','ok');
+  if(state._detailOpen&&state.currentRoom===rid) renderRoomDetail(rid);
+}
+function setRoomHeartbeatMode(rid,mode){
+  let res; try{ res=JSON.parse(AndroidBridge.setRoomHeartbeatMode(rid,mode)); }catch(e){ res={code:-1,msg:''+e}; }
+  const r=state.rooms.find(x=>x.roomId===rid); if(r) r.heartbeatMode=mode;
+  if(res.code<0){ toast(res.msg||'切换失败','err'); return; }
+  toast(res.msg||'已切换','ok');
 }
 function setDanmaku(rid,on) { AndroidBridge.setDanmakuOpen(rid,on); }
 function setAudioOnlyRoom(rid,on) {

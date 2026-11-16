@@ -12,6 +12,7 @@ import com.ddtv.app.core.FFmpegRepair
 import com.ddtv.app.core.Http
 import com.ddtv.app.core.LiveRecorder
 import com.ddtv.app.core.Logger
+import com.ddtv.app.core.WatchHeartbeat
 import com.ddtv.app.core.RoomManager
 import org.json.JSONArray
 import org.json.JSONObject
@@ -236,6 +237,32 @@ class DDTVBridge(private val context: Context, private val webView: WebView) {
         RoomManager.updateRoom(roomId) { it.quality = qn }
     }
 
+    /** 房间级：启用/停用小心心。停用立即注销该房间会话；启用时按档位立即生效（live 档且在播） */
+    @JavascriptInterface
+    fun setRoomHeartbeat(roomId: Long, on: Boolean) {
+        RoomManager.updateRoom(roomId) { it.heartbeatOn = on }
+        val card = RoomManager.getRoom(roomId) ?: return
+        if (!on) {
+            WatchHeartbeat.unregister(roomId)
+        } else if (card.liveStatus == 1 && RoomManager.heartbeatAllowed(card, "live")) {
+            WatchHeartbeat.register(roomId, card.uid)
+        }
+    }
+
+    /** 房间级：设置小心心档位 off|listen|live。切换后按新档位即时注销/注册 */
+    @JavascriptInterface
+    fun setRoomHeartbeatMode(roomId: Long, mode: String): String {
+        val m = if (mode in listOf("off", "listen", "live")) mode else "listen"
+        RoomManager.updateRoom(roomId) { it.heartbeatMode = m }
+        val card = RoomManager.getRoom(roomId) ?: return JSONObject().put("code", -1).put("msg", "房间不存在").toString()
+        // 档位切换：先注销本房间，再按新档位判定是否恢复（避免旧档位残留会话）
+        WatchHeartbeat.unregister(roomId)
+        if (card.liveStatus == 1 && RoomManager.heartbeatAllowed(card, "live")) {
+            WatchHeartbeat.register(roomId, card.uid)
+        }
+        return JSONObject().put("code", 0).put("msg", "已切换为 $m").toString()
+    }
+
     @JavascriptInterface
     fun setAudioOnly(roomId: Long, on: Boolean) {
         // 完全跟随用户开关；电台/聊天室分区仅作默认值与 UI 提示，不再强制（2026-10 修正）
@@ -435,7 +462,12 @@ class DDTVBridge(private val context: Context, private val webView: WebView) {
             put("splitSeconds", s.splitSeconds)
             put("splitSizeMB", s.splitSizeMB)
             put("remuxAfterLive", s.remuxAfterLive)
-            put("watchHeartbeat", s.watchHeartbeat)
+            put("heartbeatGlobal", s.heartbeatGlobal)
+            put("heartbeatDefault", s.heartbeatDefault)
+            put("heartbeatMaxRooms", s.heartbeatMaxRooms)
+            put("danmakuGlobal", s.danmakuGlobal)
+            put("danmakuDefault", s.danmakuDefault)
+            put("danmakuMaxRooms", s.danmakuMaxRooms)
             put("remindLive", s.remindLive)
             put("blockBarrage", s.blockBarrage)
             put("fileNameFormat", s.fileNameFormat)
@@ -470,7 +502,12 @@ class DDTVBridge(private val context: Context, private val webView: WebView) {
                 splitSeconds = o.optLong("splitSeconds", splitSeconds)
                 splitSizeMB = o.optLong("splitSizeMB", splitSizeMB)
                 remuxAfterLive = o.optBoolean("remuxAfterLive", remuxAfterLive)
-                watchHeartbeat = o.optBoolean("watchHeartbeat", watchHeartbeat)
+                heartbeatGlobal = o.optBoolean("heartbeatGlobal", heartbeatGlobal)
+                heartbeatDefault = o.optString("heartbeatDefault", heartbeatDefault)
+                heartbeatMaxRooms = o.optInt("heartbeatMaxRooms", heartbeatMaxRooms)
+                danmakuGlobal = o.optBoolean("danmakuGlobal", danmakuGlobal)
+                danmakuDefault = o.optBoolean("danmakuDefault", danmakuDefault)
+                danmakuMaxRooms = o.optInt("danmakuMaxRooms", danmakuMaxRooms)
                 remindLive = o.optBoolean("remindLive", remindLive)
                 blockBarrage = o.optString("blockBarrage", blockBarrage)
                 fileNameFormat = o.optString("fileNameFormat", fileNameFormat)

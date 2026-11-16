@@ -222,7 +222,7 @@ object DebugServer {
                 .append("\"title\":\"${esc(r.title)}\",\"recState\":\"${r.recState}\",\"recMode\":\"${r.recMode}\",")
                 .append("\"recSize\":${r.recSize},\"recSpeed\":${r.recSpeed},\"recStartTime\":${r.recStartTime},")
                 .append("\"livePopularity\":${r.livePopularity},\"danmakuCount\":${r.danmakuCount},")
-                .append("\"danmakuOpen\":${r.danmakuOpen},\"autoRecord\":${r.autoRecord},")
+                .append("\"danmakuOpen\":${r.danmakuOpen},\"heartbeatOn\":${r.heartbeatOn},\"heartbeatMode\":\"${r.heartbeatMode}\",\"autoRecord\":${r.autoRecord},")
                 .append("\"lastError\":\"${esc(r.lastError)}\"}")
         }
         sb.append(']')
@@ -232,7 +232,7 @@ object DebugServer {
         // 设置
         val s = RoomManager.settings
         sb.append(",\"settings\":{\"pollInterval\":${s.pollInterval},\"autoRecordDefault\":${s.autoRecordDefault},")
-            .append("\"remuxAfterLive\":${s.remuxAfterLive},\"watchHeartbeat\":${s.watchHeartbeat},")
+            .append("\"remuxAfterLive\":${s.remuxAfterLive},\"heartbeatGlobal\":${s.heartbeatGlobal},\"heartbeatDefault\":\"${s.heartbeatDefault}\",\"heartbeatMaxRooms\":${s.heartbeatMaxRooms},\"danmakuGlobal\":${s.danmakuGlobal},\"danmakuMaxRooms\":${s.danmakuMaxRooms},")
             .append("\"outputDir\":\"${esc(RoomManager.outputDir.path)}\"}")
         sb.append('}')
         return sb.toString()

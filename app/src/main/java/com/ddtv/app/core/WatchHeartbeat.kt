@@ -25,9 +25,17 @@ object WatchHeartbeat {
     private val sessionLock = Any()
 
     fun register(roomId: Long, anchorUid: Long) {
-        // 开关判断收口在管理器内（对齐原版 WatchHeartbeatManager.Register）
-        if (!RoomManager.settings.watchHeartbeat) return
+        // 闸门收口在管理器内（对齐原版 WatchHeartbeatManager.Register）：
+        // 全局总闸 + 房间 heartbeatOn + 房间档位 live/listen 任一生效才放行。
         if (roomId <= 0) return
+        val card = RoomManager.getRoom(roomId)
+        if (card == null || !(RoomManager.heartbeatAllowed(card, "live") || RoomManager.heartbeatAllowed(card, "listen"))) return
+        // live 档并发上限（防风控）：超出上限的房间不上报
+        val maxRooms = RoomManager.settings.heartbeatMaxRooms
+        if (maxRooms > 0 && sessions.size >= maxRooms && !sessions.containsKey(roomId)) {
+            log("房间 $roomId 已达小心心并发上限 $maxRooms，跳过上报")
+            return
+        }
         // 锁内检查-创建：避免并发 register 同一房间启动孤儿会话（对齐原版 _sessionLock 修复）
         synchronized(sessionLock) {
             if (sessions.containsKey(roomId)) return

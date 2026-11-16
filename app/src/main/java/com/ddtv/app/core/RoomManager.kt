@@ -187,8 +187,9 @@ object RoomManager {
         // 并把 liveStatusPrev 置为已开播，避免首轮轮询重复触发“开播了”事件
         if (card.liveStatus == 1) {
             card.liveStatusPrev = true
-            if (card.danmakuOpen) ensureDanmaku(card)
+            ensureDanmaku(card)
             if (card.autoRecord) ensureRecording(card)
+            if (heartbeatAllowed(card, "live")) WatchHeartbeat.register(card.roomId, card.uid)
         }
         return 1
     }
@@ -218,8 +219,9 @@ object RoomManager {
             // 添加时已真实开播(status=1) → 立即启动弹幕/录制，不等下一轮轮询；轮播(2)不录制
             if (card.liveStatus == 1) {
                 card.liveStatusPrev = true
-                if (card.danmakuOpen) ensureDanmaku(card)
+                ensureDanmaku(card)
                 if (card.autoRecord) ensureRecording(card)
+                if (heartbeatAllowed(card, "live")) WatchHeartbeat.register(card.roomId, card.uid)
             }
             return 1
         }
@@ -515,7 +517,9 @@ object RoomManager {
             }
             card.liveStatusPrev = true
             if (card.autoRecord) ensureRecording(card)
-            if (card.danmakuOpen) ensureDanmaku(card)
+            ensureDanmaku(card)
+            // 小心心 live 档：开播即上报（挂机）；listen 档由 ListenPlayer 在播放时注册
+            if (heartbeatAllowed(card, "live")) WatchHeartbeat.register(card.roomId, card.uid)
         } else if (!isLive && wasLive) {
             // 下播（日志经 notifyLog 打一条"直播结束";不再单独 Logger.i 避免前端/DebugServer 双打）
             notifyLog(card.roomId, "info", "直播结束")
@@ -712,8 +716,36 @@ object RoomManager {
 
     // ============ 弹幕调度 ============
 
+    // ============ 小心心 / 弹幕 统一闸门 ============
+    // 小心心（live-trace E/X 上报）：三层收敛
+    //   全局总闸 heartbeatGlobal → 房间 heartbeatOn → 房间档位 heartbeatMode
+    //   本函数只回答"当前是否应上报"，供 ListenPlayer 与开播/下播调度共用。
+    fun heartbeatAllowed(card: RoomCard, phase: String): Boolean {
+        val st = settings
+        if (!st.heartbeatGlobal) return false
+        if (!card.heartbeatOn) return false
+        return when (card.heartbeatMode) {
+            "live" -> phase == "live"          // 开播期间（挂机）
+            "listen" -> phase == "listen"      // 仅听直播播放期间
+            else -> false
+        }
+    }
+
+    /** 弹幕是否允许连接：全局总闸 + 房间开关 + 并发上限（上限防 50 条 WS 同时以本人身份进房） */
+    fun danmakuAllowed(card: RoomCard): Boolean {
+        val st = settings
+        if (!st.danmakuGlobal) return false
+        if (!card.danmakuOpen) return false
+        val limit = if (st.danmakuMaxRooms > 0) st.danmakuMaxRooms else Int.MAX_VALUE
+        return danmakuClients.size < limit
+    }
+
     fun ensureDanmaku(card: RoomCard) {
         if (danmakuClients.containsKey(card.roomId)) return
+        if (!danmakuAllowed(card)) {
+            if (card.danmakuOpen) Logger.i("Danmaku", "[${card.roomId}] 跳过连弹幕（全局关闭或已达并发上限 ${settings.danmakuMaxRooms}）")
+            return
+        }
         val client = DanmakuClient(card)
         client.listener = object : DanmakuClient.Listener {
             override fun onDanmaku(item: DanmakuItem) {
@@ -969,7 +1001,12 @@ object RoomManager {
             splitSizeMB = prefs.getLong("split_size_mb", 0),
             minFileSizeMB = prefs.getLong("min_file_size_mb", 0),
             remuxAfterLive = prefs.getBoolean("remux_after_live", true),
-            watchHeartbeat = prefs.getBoolean("watch_heartbeat", false),
+            heartbeatGlobal = prefs.getBoolean("heartbeat_global", false),
+            heartbeatDefault = prefs.getString("heartbeat_default", "listen") ?: "listen",
+            heartbeatMaxRooms = prefs.getInt("heartbeat_max_rooms", 5),
+            danmakuGlobal = prefs.getBoolean("danmaku_global", true),
+            danmakuDefault = prefs.getBoolean("danmaku_default", false),
+            danmakuMaxRooms = prefs.getInt("danmaku_max_rooms", 10),
             saveCover = prefs.getBoolean("save_cover", true),
             remindLive = prefs.getBoolean("remind_live", true),
             blockBarrage = prefs.getString("block_barrage", "") ?: "",
@@ -1003,7 +1040,12 @@ object RoomManager {
             .putLong("split_size_mb", settings.splitSizeMB)
             .putLong("min_file_size_mb", settings.minFileSizeMB)
             .putBoolean("remux_after_live", settings.remuxAfterLive)
-            .putBoolean("watch_heartbeat", settings.watchHeartbeat)
+            .putBoolean("heartbeat_global", settings.heartbeatGlobal)
+            .putString("heartbeat_default", settings.heartbeatDefault)
+            .putInt("heartbeat_max_rooms", settings.heartbeatMaxRooms)
+            .putBoolean("danmaku_global", settings.danmakuGlobal)
+            .putBoolean("danmaku_default", settings.danmakuDefault)
+            .putInt("danmaku_max_rooms", settings.danmakuMaxRooms)
             .putBoolean("save_cover", settings.saveCover)
             .putBoolean("remind_live", settings.remindLive)
             .putString("block_barrage", settings.blockBarrage)
@@ -1025,8 +1067,17 @@ object RoomManager {
             .putString("sub_font", settings.subFont)
             .apply()
         LiveRecorder.applySettings(settings)
-        // 小心心开关即时生效：关闭则停所有观看心跳；开启后由"听直播(观看)"时注册（对齐原版）
-        if (!settings.watchHeartbeat) WatchHeartbeat.stopAll()
+        // 小心心即时生效：总闸关闭 → 停所有会话；总闸开启 → 为 live 档且在播的房间补注册
+        if (!settings.heartbeatGlobal) {
+            WatchHeartbeat.stopAll()
+        } else {
+            rooms.values.forEach { c ->
+                if (c.liveStatus == 1 && heartbeatAllowed(c, "live")) WatchHeartbeat.register(c.roomId, c.uid)
+            }
+        }
+        // 弹幕总闸关闭 → 全部断开；默认值变化不影响已加房间（只影响新建房间）
+        if (!settings.danmakuGlobal) stopAllDanmaku()
+        else rooms.values.forEach { c -> if (c.liveStatus == 1) ensureDanmaku(c) }
     }
 
     fun saveRooms() {
@@ -1050,6 +1101,8 @@ object RoomManager {
                     put("autoRecord", card.autoRecord)
                     put("quality", card.quality)
                     put("danmakuOpen", card.danmakuOpen)
+                    put("heartbeatOn", card.heartbeatOn)
+                    put("heartbeatMode", card.heartbeatMode)
                     put("remind", card.remind)
                     put("audioOnly", card.audioOnly)
                     put("voiceRoom", card.voiceRoom)
@@ -1084,7 +1137,9 @@ object RoomManager {
                     liveStatus = Json.objInt(o, "liveStatus", 0),
                     autoRecord = Json.objBool(o, "autoRecord", true),
                     quality = Json.objInt(o, "quality", 10000),
-                    danmakuOpen = Json.objBool(o, "danmakuOpen", true),
+                    danmakuOpen = Json.objBool(o, "danmakuOpen", false),
+                    heartbeatOn = Json.objBool(o, "heartbeatOn", false),
+                    heartbeatMode = Json.obj(o, "heartbeatMode").ifEmpty { "listen" },
                     remind = Json.objBool(o, "remind", true),
                     audioOnly = Json.objBool(o, "audioOnly", false),
                     voiceRoom = Json.objBool(o, "voiceRoom", false),

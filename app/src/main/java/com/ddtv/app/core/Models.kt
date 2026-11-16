@@ -20,7 +20,14 @@ data class AppSettings(
     var splitSizeMB: Long = 0,           // 按大小分割(MB, 0=关)
     var minFileSizeMB: Long = 0,         // 自动清理阈值:小于该大小的文件删除(0=关)
     var remuxAfterLive: Boolean = true,  // 结束后转封装 mp4
-    var watchHeartbeat: Boolean = false, // 小心心挂机
+    // ---- 小心心（观看时长上报）----
+    var heartbeatGlobal: Boolean = false,   // 总闸：关=所有房间一律不上报
+    var heartbeatDefault: String = "listen", // 新房间默认档位: off|listen|live
+    var heartbeatMaxRooms: Int = 5,          // live 档并发上限（防风控）
+    // ---- 弹幕 ----
+    var danmakuGlobal: Boolean = true,       // 总闸：关=全部断开不再连
+    var danmakuDefault: Boolean = false,     // 新房间默认是否连接（默认关，避免默认暴露身份）
+    var danmakuMaxRooms: Int = 10,           // 同时连接上限
     var saveCover: Boolean = true,       // 保存封面(每段录制存 cover.jpg)
     var remindLive: Boolean = true,      // 开播/下播系统通知提醒
     var blockBarrage: String = "",       // 弹幕屏蔽词，| 分隔（对应原版 _BlockBarrageList）
@@ -52,7 +59,12 @@ data class AppSettings(
         put("splitSizeMB", splitSizeMB)
         put("minFileSizeMB", minFileSizeMB)
         put("remuxAfterLive", remuxAfterLive)
-        put("watchHeartbeat", watchHeartbeat)
+        put("heartbeatGlobal", heartbeatGlobal)
+        put("heartbeatDefault", heartbeatDefault)
+        put("heartbeatMaxRooms", heartbeatMaxRooms)
+        put("danmakuGlobal", danmakuGlobal)
+        put("danmakuDefault", danmakuDefault)
+        put("danmakuMaxRooms", danmakuMaxRooms)
         put("saveCover", saveCover)
         put("remindLive", remindLive)
         put("blockBarrage", blockBarrage)
@@ -95,7 +107,9 @@ data class RoomCard(
     // 房间级配置
     var autoRecord: Boolean = true,
     var quality: Int = 10000,
-    var danmakuOpen: Boolean = true,
+    var danmakuOpen: Boolean = false,     // 连接弹幕(登录态=以你的账号进入直播间,主播可见)；默认关
+    var heartbeatOn: Boolean = false,     // 本房间是否启用小心心(总闸开启时才生效)
+    var heartbeatMode: String = "listen", // 本房间档位: off|listen|live
     var remind: Boolean = true,          // 开播/下播提醒（对应原版 IsRemind）
     var audioOnly: Boolean = false,      // 仅录制音频（media_type=1 纯音频流，省流量）
     var voiceRoom: Boolean = false,      // 语音直播间（电台/聊天室分区，只能录纯音频，无视频流）
