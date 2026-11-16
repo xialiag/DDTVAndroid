@@ -57,25 +57,84 @@ object Logger {
         } else {
             android.util.Log.i("DDTV", "[$roomId] $msg")
         }
-        appendToFile(line)
+        enqueueFile(line)
     }
 
-    /** 追加写入当日日志文件（失败静默，不影响主流程） */
-    private fun appendToFile(line: LogLine) {
+    // ============ 异步文件写入 ============
+    // 原来在 push() 里同步 appendText：弹幕高频路径（onMessage 线程）每条日志都要
+    // 开关一次文件 + 两次 SimpleDateFormat，弹幕风暴时明显卡顿。
+    // 改为单消费者线程 + 批量写：入队永不阻塞调用方；线程攒齐或超时后一次写盘。
+    private val fileQueue = ConcurrentLinkedQueue<LogLine>()
+    @Volatile private var writerThread: Thread? = null
+
+    private fun enqueueFile(line: LogLine) {
+        if (appContext == null) return
+        fileQueue.add(line)
+        // 上限保护：异常场景下（写盘持续失败）不让队列无限增长
+        if (fileQueue.size > 5000) repeat(1000) { fileQueue.poll() ?: return@repeat }
+        if (writerThread?.isAlive != true) {
+            synchronized(this) {
+                if (writerThread?.isAlive != true) {
+                    writerThread = Thread({ writerLoop() }, "LogWriter").apply { isDaemon = true; start() }
+                }
+            }
+        }
+    }
+
+    private fun writerLoop() {
+        while (true) {
+            try {
+                val first = fileQueue.poll()
+                if (first == null) { Thread.sleep(200); continue }
+                // 攒批：一次写盘处理尽可能多的日志（写一半时新到的留给下一轮）
+                val batch = ArrayList<LogLine>(64)
+                batch.add(first)
+                while (batch.size < 200) { batch.add(fileQueue.poll() ?: break) }
+                appendBatchToFile(batch)
+            } catch (_: InterruptedException) {
+                return
+            } catch (_: Exception) {
+                try { Thread.sleep(500) } catch (_: InterruptedException) { return }
+            }
+        }
+    }
+
+    /** 进程退出/需要立刻落盘时调用（如 CrashHandler） */
+    fun flush() {
+        val pending = ArrayList<LogLine>()
+        while (true) { pending.add(fileQueue.poll() ?: break) }
+        if (pending.isNotEmpty()) appendBatchToFile(pending)
+    }
+
+    private fun appendBatchToFile(lines: List<LogLine>) {
         val ctx = appContext ?: return
         try {
-            val day = SimpleDateFormat("yyyyMMdd", Locale.CHINA).format(Date(line.time))
             val dir = File(ctx.getExternalFilesDir(null), "logs").apply { mkdirs() }
             synchronized(fileLock) {
-                if (day != currentDay) {
-                    currentDay = day
-                    cleanupOldFiles(dir)
+                val sb = StringBuilder()
+                var day = currentDay
+                for (line in lines) {
+                    val d = SimpleDateFormat("yyyyMMdd", Locale.CHINA).format(Date(line.time))
+                    if (d != day) {
+                        // 跨天：先把已攒的写掉，再切文件
+                        if (sb.isNotEmpty()) { flushBuf(dir, day, sb) }
+                        day = d
+                        currentDay = d
+                        cleanupOldFiles(dir)
+                    }
+                    val time = SimpleDateFormat("HH:mm:ss.SSS", Locale.CHINA).format(Date(line.time))
+                    sb.append('[').append(time).append("][").append(line.level).append("][").append(line.roomId).append("] ").append(line.msg).append('\n')
                 }
-                val time = SimpleDateFormat("HH:mm:ss.SSS", Locale.CHINA).format(Date(line.time))
-                File(dir, "ddtv_$day.log")
-                    .appendText("[$time][${line.level}][${line.roomId}] ${line.msg}\n", Charsets.UTF_8)
+                if (sb.isNotEmpty()) flushBuf(dir, day, sb)
             }
         } catch (_: Exception) {}
+    }
+
+    private fun flushBuf(dir: File, day: String, sb: StringBuilder) {
+        try {
+            File(dir, "ddtv_$day.log").appendText(sb.toString(), Charsets.UTF_8)
+        } catch (_: Exception) {}
+        sb.setLength(0)
     }
 
     /** 清理超过保留天数的旧日志文件 */

@@ -205,7 +205,8 @@ class DDTVBridge(private val context: Context, private val webView: WebView) {
     fun removeRoom(roomId: Long) {
         RoomManager.removeRoom(roomId)
         // 正在收听该房间 → 一并停止播放，避免残留
-        if (ListenService.activeRoom() == roomId) ListenService.stop(context)
+        // （原 ListenService 已删除：它是从未启动的死代码，实际播放由进程内 ListenPlayer 承担）
+        if (com.ddtv.app.core.ListenPlayer.activeRoom() == roomId) com.ddtv.app.core.ListenPlayer.stop()
     }
 
     @JavascriptInterface
@@ -580,7 +581,8 @@ class DDTVBridge(private val context: Context, private val webView: WebView) {
 
     // ============ 自动更新（GitHub Releases，参照原版 ProgramUpdates） ============
 
-    private val currentVersion: String = "0.7.64"
+    // 直接取构建产物版本：避免 build.gradle 改了这里忘改（历史上曾出现两处不一致）
+    private val currentVersion: String = com.ddtv.app.BuildConfig.VERSION_NAME
 
     /** 解析 "v0.7.0" / "0.7.0-beta1" 为可比较数字段列表 */
     private fun versionParts(v: String): List<Long> {

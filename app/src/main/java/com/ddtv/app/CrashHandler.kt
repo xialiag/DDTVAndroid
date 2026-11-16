@@ -55,6 +55,8 @@ class CrashHandler private constructor(private val context: Context) : Thread.Un
     override fun uncaughtException(t: Thread, e: Throwable) {
         // 1. 记录到内存日志
         Logger.e("CrashHandler", "未捕获异常 [${t.name}]", e)
+        // 1.5 立刻落盘：日志文件写入是异步队列，进程即将被杀时可能还压在队列里
+        try { Logger.flush() } catch (_: Exception) {}
 
         // 2. 写入崩溃日志文件
         try {

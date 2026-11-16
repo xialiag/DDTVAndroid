@@ -106,10 +106,12 @@ class MainActivity : AppCompatActivity() {
         window.statusBarColor = Color.parseColor("#1E1E1E")
 
         // 初始化核心
+        // Logger 必须最先 init：RoomManager.init 内部就会打"加载房间 N 个"等日志，
+        // 晚于它初始化会让这些早期日志因 appContext==null 而丢失（文件里缺前几条）。
+        Logger.init(this)
         RoomManager.init(this)
         com.ddtv.app.core.CoverCache.init(this)
         AccountManager.init(this)
-        Logger.init(this)
         // 全局崩溃捕获（BBDownAndroid 同款：崩溃日志写 logs/crash_*.txt，DebugServer/设置页可查看）
         CrashHandler.install(this)
         // 调试服务器默认关闭，设置页可开启（默认关避免局域网他人访问）
