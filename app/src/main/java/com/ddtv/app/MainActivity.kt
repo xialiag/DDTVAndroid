@@ -363,6 +363,11 @@ class MainActivity : AppCompatActivity() {
         // 录制需要后台持续，服务独立于 Activity 生命周期
         // 保存未完成的修复任务：退出后下次启动自动继续（running 的半成品输出会被重跑覆盖）
         try { com.ddtv.app.core.RepairTaskManager.persistPending(this) } catch (_: Exception) {}
+        // 解除监听：RoomManager/LiveRecorder/Logger 都是静态 object，不移除会永久持有
+        // 本 Activity（整个 View 树）→ 内存泄漏，且重建后旧实例仍收事件（重复回调）。
+        try { RoomManager.removeListener(uiRoomListener) } catch (_: Exception) {}
+        try { LiveRecorder.removeListener(uiRecorderListener) } catch (_: Exception) {}
+        if (Logger.listener != null) Logger.listener = null
         super.onDestroy()
     }
 }

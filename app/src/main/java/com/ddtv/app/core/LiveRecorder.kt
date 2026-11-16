@@ -116,7 +116,9 @@ object LiveRecorder {
         return Regex("""^https?://([^/]+)""").find(u)?.groupValues?.get(1)?.takeIf { it.isNotEmpty() }
     }
 
-    fun isRecording(roomId: Long): Boolean = running.containsKey(roomId)
+    /** 与其它访问点一致加锁：running 是普通 HashMap，无锁读可能撞上 put/remove 导致
+     *  ConcurrentModificationException 或读到撕裂状态。 */
+    fun isRecording(roomId: Long): Boolean = synchronized(running) { running.containsKey(roomId) }
 
     /** 判断文件是否正被某房间录制写入（修复/删除等操作必须避开，否则会打断录制） */
     fun isFileBeingRecorded(path: String): Boolean {
@@ -209,7 +211,8 @@ object LiveRecorder {
 
     /** 断开指定房间的活跃连接（打断阻塞中的 read，让停止立即生效） */
     private fun disconnect(roomId: Long) {
-        running[roomId]?.conn?.disconnect()
+        val conn = synchronized(running) { running[roomId]?.conn }
+        conn?.disconnect()
     }
 
     private fun run(task: RecTask) {

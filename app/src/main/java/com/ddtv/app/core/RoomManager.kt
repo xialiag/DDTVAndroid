@@ -59,6 +59,10 @@ object RoomManager {
 
     private val rooms = ConcurrentHashMap<Long, RoomCard>()
     private val danmakuClients = ConcurrentHashMap<Long, DanmakuClient>()
+    /** 弹幕"放弃重试"冷却：DanmakuClient 报「连接失败，点击重试」时记时刻，
+     *  避免轮询补位每 15s 重建一个内部又要重试 3 次的 client（成倍的风控压力）。 */
+    private val danmakuCooldown = ConcurrentHashMap<Long, Long>()
+    private const val DANMAKU_COOLDOWN_MS = 5 * 60 * 1000L
     private val lock = Any()
 
     /** 录制历史（对应原版 Detect.histories，内存 + prefs 持久化，最多保留 100 条） */
@@ -436,6 +440,8 @@ object RoomManager {
                 saveDanmakuFile(card)
             }
             danmakuBuffer.remove(roomId)  // 清理弹幕缓冲，释放内存
+            danmakuCooldown.remove(roomId)  // 否则重新添加该房间时冷却会错误生效
+            danmakuStatus.remove(roomId)
             saveRooms()
             notifyRoomsChanged()
         }
@@ -509,7 +515,8 @@ object RoomManager {
             // 前置 danmakuGlobal 短路：否则全局关闭时每轮都会进 ensureDanmaku 并打一条
             // "跳过连弹幕"日志（每房间每 15s 一条噪声）。
             if (card.liveStatus == 1 && settings.danmakuGlobal && card.danmakuOpen
-                && !danmakuClients.containsKey(card.roomId)) {
+                && !danmakuClients.containsKey(card.roomId)
+                && !inDanmakuCooldown(card.roomId)) {
                 ensureDanmaku(card)
             }
             // 安全网（小心心 live 档）：同上，达上限被跳过或会话因连续失败退出后补位。
@@ -517,7 +524,8 @@ object RoomManager {
             // run() 会立刻退出，若每轮都 register 就会产生建线程+打日志的 15s 噪声。
             if (card.liveStatus == 1 && settings.heartbeatGlobal && card.heartbeatOn
                 && card.heartbeatMode == "live" && !WatchHeartbeat.isActive(card.roomId)
-                && AccountManager.isLoggedIn()) {   // 登录检查放最后：最重的调用，最少触发
+                && !WatchHeartbeat.inCooldown(card.roomId)   // 连续失败后 5 分钟内不重试，避免风暴
+                && AccountManager.isLoggedIn()) {            // 登录检查放最后：最重的调用，最少触发
                 WatchHeartbeat.register(card.roomId, card.uid)
             }
         }
@@ -762,6 +770,13 @@ object RoomManager {
         return danmakuClients.size < limit
     }
 
+    private fun inDanmakuCooldown(roomId: Long): Boolean {
+        val t = danmakuCooldown[roomId] ?: return false
+        if (System.currentTimeMillis() - t < DANMAKU_COOLDOWN_MS) return true
+        danmakuCooldown.remove(roomId)
+        return false
+    }
+
     fun ensureDanmaku(card: RoomCard) {
         // 原子创建：check-then-put 之间有窗口时，轮询线程与 UI(setDanmakuOpen) 会各建一个
         // DanmakuClient，后者覆盖前者 in map，成为无法 stop 的孤儿 WS（以本人身份多连一条弹幕）。
@@ -838,6 +853,8 @@ object RoomManager {
 
     private fun onDanmakuStatus(roomId: Long, connected: Boolean, msg: String) {
         danmakuStatus[roomId] = connected to msg
+        if (!connected && msg.contains("点击重试")) danmakuCooldown[roomId] = System.currentTimeMillis()
+        else if (connected) danmakuCooldown.remove(roomId)   // 连上即解除冷却
         notifyLog(roomId, if (connected) "info" else "warn", "弹幕: $msg")
         notifyDanmakuStatus(roomId, connected, msg)
     }

@@ -349,6 +349,7 @@ object AccountManager {
         // 立即停掉所有观看心跳：否则线程要等到下一轮 X（最长 60s）才发现登录态失效，
         // 期间会用已清空的 Cookie 反复请求，可能触发风控。
         WatchHeartbeat.stopAll()
+        BiliLiveApi.clearFollowCache()   // 换号/登出后不得复用上一个账号的关注列表
         listener?.onLoginStateChanged(null)
         Logger.i("Account", "已退出登录")
     }

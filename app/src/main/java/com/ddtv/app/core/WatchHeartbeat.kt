@@ -24,6 +24,20 @@ object WatchHeartbeat {
     private val sessions = ConcurrentHashMap<Long, Session>()
     private val sessionLock = Any()
 
+    /** 最近一次"连续失败退出"的时刻（ms）。供轮询补位做冷却判断，
+     *  否则 E 请求持续失败（风控/网络）时，run 退出 → isActive=false →
+     *  轮询每 15s 重启一个必失败的会话，形成重试风暴。 */
+    private val failCooldown = ConcurrentHashMap<Long, Long>()
+    private const val FAIL_COOLDOWN_MS = 5 * 60 * 1000L   // 5 分钟
+
+    /** 补位用：是否处于失败冷却期 */
+    fun inCooldown(roomId: Long): Boolean {
+        val t = failCooldown[roomId] ?: return false
+        if (System.currentTimeMillis() - t < FAIL_COOLDOWN_MS) return true
+        failCooldown.remove(roomId)
+        return false
+    }
+
     fun register(roomId: Long, anchorUid: Long) {
         // 闸门收口在管理器内（对齐原版 WatchHeartbeatManager.Register）：
         // 全局总闸 + 房间 heartbeatOn + 房间档位 live/listen 任一生效才放行。
@@ -103,12 +117,13 @@ object WatchHeartbeat {
             if (secret == null) {
                 failures++
                 log("房间 $roomId 心跳E请求失败（连续第${failures}次）")
-                if (failures >= 3) return
+                if (failures >= 3) { failCooldown[roomId] = System.currentTimeMillis(); return }
                 Thread.sleep(10000)
                 secret = sendE(idJson, deviceJson, anchorUid, csrf)
                 if (secret == null) return
             }
             failures = 0
+            failCooldown.remove(roomId)
             log("房间 $roomId 观看时长心跳已启动(间隔${secret.interval}秒)")
 
             while (!session.stopFlag.get()) {
@@ -130,6 +145,7 @@ object WatchHeartbeat {
                     log("房间 $roomId 心跳X请求失败（连续第${failures}次），准备重建心跳链")
                     if (failures >= 3) {
                         log("房间 $roomId 观看心跳连续失败已达上限，停止尝试")
+                        failCooldown[roomId] = System.currentTimeMillis()
                         return
                     }
                     secret = sendE(idJson, deviceJson, anchorUid, csrf) ?: continue

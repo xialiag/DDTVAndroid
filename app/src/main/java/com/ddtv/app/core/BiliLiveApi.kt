@@ -900,14 +900,16 @@ object BiliLiveApi {
     data class FollowUser(val mid: Long, val uname: String, val face: String, val liveStatus: Int, val roomId: Long)
 
     /** 关注列表缓存（5 分钟，避免反复进入账号页重复全量拉取） */
-    @Volatile private var followCache: Pair<Long, List<FollowUser>>? = null
+    /** 缓存键三元组：uid + 时刻 + 列表。必须带 uid —— 否则换账号后 5 分钟内
+     *  仍返回上一个账号的关注列表（隐私泄露 + 数据错误）。 */
+    @Volatile private var followCache: Triple<Long, Long, List<FollowUser>>? = null
     private const val FOLLOW_CACHE_MS = 5 * 60_000L
 
     fun getFollowAllCached(uid: Long): List<FollowUser> {
         val c = followCache
-        if (c != null && System.currentTimeMillis() - c.first < FOLLOW_CACHE_MS) return c.second
+        if (c != null && c.first == uid && System.currentTimeMillis() - c.second < FOLLOW_CACHE_MS) return c.third
         val list = getFollowAll(uid)
-        followCache = System.currentTimeMillis() to list
+        followCache = Triple(uid, System.currentTimeMillis(), list)
         return list
     }
 
