@@ -702,8 +702,8 @@ function renderRoomDetail(rid, container) {
   renderCSelect($('#qualitySel'), qnOpts, String(r.quality), v => setQuality(r.roomId, Number(v)));
   if ($('#heartModeSel')) {
     renderCSelect($('#heartModeSel'),
-      [{v:'listen',label:'仅跟随听直播'},{v:'live',label:'开播即挂'},{v:'off',label:'不启用'}],
-      r.heartbeatMode||'listen',
+      [{v:'listen',label:'仅跟随听直播'},{v:'live',label:'开播即挂'}],
+      (r.heartbeatMode==='live')?'live':'listen',
       v => setRoomHeartbeatMode(r.roomId, v));
   }
 }
@@ -1562,7 +1562,12 @@ function saveSettings() {
     danmakuSrt:$('#setDanmakuSrt').checked,
     danmakuSubFormat:$('#setSubFormat').dataset.value||'srt'};
   const r=JSON.parse(AndroidBridge.setSettings(JSON.stringify(s)));
-  toast(r.msg, r.code<0?'err':'ok'); if(r.code>0){state.settings=s;updateStatusbar();}
+  toast(r.msg, r.code<0?'err':'ok');
+  if(r.code>0){
+    state.settings=s; updateStatusbar();
+    // 小心心总闸影响房间详情里区块的显隐 → 停留详情页时需重绘才生效
+    if(state._detailOpen && state.currentRoom) renderRoomDetail(state.currentRoom);
+  }
 }
 
 function pickOutputDir() {
@@ -2154,11 +2159,17 @@ function setRoomHeartbeat(rid,on){
 }
 function setRoomHeartbeatMode(rid,mode){
   let res; try{ res=JSON.parse(AndroidBridge.setRoomHeartbeatMode(rid,mode)); }catch(e){ res={code:-1,msg:''+e}; }
-  const r=state.rooms.find(x=>x.roomId===rid); if(r) r.heartbeatMode=mode;
   if(res.code<0){ toast(res.msg||'切换失败','err'); return; }
+  const r=state.rooms.find(x=>x.roomId===rid); if(r) r.heartbeatMode=mode;
   toast(res.msg||'已切换','ok');
 }
-function setDanmaku(rid,on) { AndroidBridge.setDanmakuOpen(rid,on); }
+function setDanmaku(rid,on) {
+  let res; try { res = JSON.parse(AndroidBridge.setDanmakuOpen(rid,on)); }
+  catch(e){ toast('操作失败: '+e,'err'); if(state._detailOpen) renderRoomDetail(rid); return; }
+  if(res && res.code<0){ toast(res.msg||'操作失败','err'); if(state._detailOpen) renderRoomDetail(rid); return; }
+  const r=state.rooms.find(x=>x.roomId===rid); if(r) r.danmakuOpen=on;
+  if(res && res.msg) toast(res.msg, (on && !state.settings.danmakuGlobal)?'err':'ok');
+}
 function setAudioOnlyRoom(rid,on) {
   const r = (state.rooms||[]).find(x=>x.roomId===rid);
   try { AndroidBridge.setAudioOnly(rid,on); } catch(e){}

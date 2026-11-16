@@ -30,15 +30,15 @@ object WatchHeartbeat {
         if (roomId <= 0) return
         val card = RoomManager.getRoom(roomId)
         if (card == null || !(RoomManager.heartbeatAllowed(card, "live") || RoomManager.heartbeatAllowed(card, "listen"))) return
-        // live 档并发上限（防风控）：超出上限的房间不上报
-        val maxRooms = RoomManager.settings.heartbeatMaxRooms
-        if (maxRooms > 0 && sessions.size >= maxRooms && !sessions.containsKey(roomId)) {
-            log("房间 $roomId 已达小心心并发上限 $maxRooms，跳过上报")
-            return
-        }
-        // 锁内检查-创建：避免并发 register 同一房间启动孤儿会话（对齐原版 _sessionLock 修复）
+        // 上限检查必须在锁内：checkLiveTransition(轮询线程) 与 setRoomHeartbeat(UI 线程)
+        // 可能并发 register，锁外检查会让两个房间同时通过上限判定，多报一个。
         synchronized(sessionLock) {
             if (sessions.containsKey(roomId)) return
+            val maxRooms = RoomManager.settings.heartbeatMaxRooms
+            if (maxRooms > 0 && sessions.size >= maxRooms) {
+                log("房间 $roomId 已达小心心并发上限 $maxRooms，跳过上报")
+                return
+            }
             val session = Session(roomId, anchorUid)
             sessions[roomId] = session
             session.thread = Thread({ run(session) }, "Heartbeat-$roomId").also { it.isDaemon = true; it.start() }

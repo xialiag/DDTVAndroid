@@ -163,6 +163,9 @@ object RoomManager {
             name = "房间 $realRoomId",
             autoRecord = settings.autoRecordDefault,
             quality = settings.defaultQuality,
+            danmakuOpen = settings.danmakuDefault,
+            heartbeatOn = settings.heartbeatDefault != "off",
+            heartbeatMode = if (settings.heartbeatDefault == "off") "listen" else settings.heartbeatDefault,
         )
         rooms[realRoomId] = card
         saveRooms()
@@ -212,6 +215,9 @@ object RoomManager {
                 popularity = u.online,
                 autoRecord = settings.autoRecordDefault,
                 quality = settings.defaultQuality,
+                danmakuOpen = settings.danmakuDefault,
+                heartbeatOn = settings.heartbeatDefault != "off",
+                heartbeatMode = if (settings.heartbeatDefault == "off") "listen" else settings.heartbeatDefault,
             )
             rooms[u.roomId] = card
             saveRooms()

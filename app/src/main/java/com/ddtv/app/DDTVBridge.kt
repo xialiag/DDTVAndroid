@@ -224,12 +224,16 @@ class DDTVBridge(private val context: Context, private val webView: WebView) {
     }
 
     @JavascriptInterface
-    fun setDanmakuOpen(roomId: Long, on: Boolean) {
+    fun setDanmakuOpen(roomId: Long, on: Boolean): String {
         RoomManager.updateRoom(roomId) { card ->
             card.danmakuOpen = on
             if (on && card.liveStatus == 1) RoomManager.ensureDanmaku(card)
             if (!on) RoomManager.stopDanmaku(roomId)
         }
+        // 全局总闸关闭时房间开关改了也不会连 —— 明确告知，否则用户以为坏了
+        val msg = if (on && !RoomManager.settings.danmakuGlobal) "已开启，但弹幕总开关关闭，实际不会连接"
+                  else if (on) "已开启连接弹幕" else "已关闭连接弹幕"
+        return JSONObject().put("code", 0).put("msg", msg).toString()
     }
 
     @JavascriptInterface
@@ -249,10 +253,11 @@ class DDTVBridge(private val context: Context, private val webView: WebView) {
         }
     }
 
-    /** 房间级：设置小心心档位 off|listen|live。切换后按新档位即时注销/注册 */
+    /** 房间级：设置小心心档位 listen|live。切换后按新档位即时注销/注册。
+     *  "off" 不再作为档位（关=用 setRoomHeartbeat(false)），仅作旧数据兼容归一为 listen。 */
     @JavascriptInterface
     fun setRoomHeartbeatMode(roomId: Long, mode: String): String {
-        val m = if (mode in listOf("off", "listen", "live")) mode else "listen"
+        val m = if (mode == "live") "live" else "listen"
         RoomManager.updateRoom(roomId) { it.heartbeatMode = m }
         val card = RoomManager.getRoom(roomId) ?: return JSONObject().put("code", -1).put("msg", "房间不存在").toString()
         // 档位切换：先注销本房间，再按新档位判定是否恢复（避免旧档位残留会话）
