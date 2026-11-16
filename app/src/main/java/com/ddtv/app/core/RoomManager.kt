@@ -747,6 +747,9 @@ object RoomManager {
     }
 
     fun ensureDanmaku(card: RoomCard) {
+        // 原子创建：check-then-put 之间有窗口时，轮询线程与 UI(setDanmakuOpen) 会各建一个
+        // DanmakuClient，后者覆盖前者 in map，成为无法 stop 的孤儿 WS（以本人身份多连一条弹幕）。
+        // putIfAbsent 失败即说明已有人连上，直接丢弃本次的新实例。
         if (danmakuClients.containsKey(card.roomId)) return
         if (!danmakuAllowed(card)) {
             if (card.danmakuOpen) Logger.i("Danmaku", "[${card.roomId}] 跳过连弹幕（全局关闭或已达并发上限 ${settings.danmakuMaxRooms}）")
@@ -761,7 +764,10 @@ object RoomManager {
                 RoomManager.onDanmakuStatus(roomId, connected, msg)
             }
         }
-        danmakuClients[card.roomId] = client
+        if (danmakuClients.putIfAbsent(card.roomId, client) != null) {
+            Logger.i("Danmaku", "[${card.roomId}] 已有弹幕连接，丢弃重复实例")
+            return
+        }
         client.start()
     }
 
@@ -1012,7 +1018,10 @@ object RoomManager {
             // 不能被静默丢弃成"关"。仅在从未写过新键时迁移一次。
             heartbeatGlobal = prefs.getBoolean("heartbeat_global",
                 prefs.getBoolean("watch_heartbeat", false)),
-            heartbeatDefault = prefs.getString("heartbeat_default", "listen") ?: "listen",
+            heartbeatDefault = when (val hd = prefs.getString("heartbeat_default", "listen")) {
+                "off", "live" -> hd
+                else -> "listen"
+            },
             heartbeatMaxRooms = prefs.getInt("heartbeat_max_rooms", 5),
             danmakuGlobal = prefs.getBoolean("danmaku_global", true),
             danmakuDefault = prefs.getBoolean("danmaku_default", false),
@@ -1081,8 +1090,16 @@ object RoomManager {
         if (!settings.heartbeatGlobal) {
             WatchHeartbeat.stopAll()
         } else {
+            // 总闸重新打开：live 档在播房间补注册；listen 档若 ListenPlayer 正在收听该房间，
+            // 也必须补注册（否则用户重新开总闸后"正在听却没上报"，listen 档看似失灵）。
+            val listeningRoom = ListenPlayer.activeRoom()
             rooms.values.forEach { c ->
-                if (c.liveStatus == 1 && heartbeatAllowed(c, "live")) WatchHeartbeat.register(c.roomId, c.uid)
+                if (c.liveStatus != 1) return@forEach
+                if (heartbeatAllowed(c, "live")) {
+                    WatchHeartbeat.register(c.roomId, c.uid)
+                } else if (c.roomId == listeningRoom && heartbeatAllowed(c, "listen")) {
+                    WatchHeartbeat.register(c.roomId, c.uid)
+                }
             }
         }
         // 弹幕总闸关闭 → 全部断开；默认值变化不影响已加房间（只影响新建房间）
@@ -1154,7 +1171,9 @@ object RoomManager {
                     // 否则老用户升级后全局迁移为开、房间却全关，表现为"开了但没生效"。
                     heartbeatOn = if (o.has("heartbeatOn")) Json.objBool(o, "heartbeatOn", false)
                                   else settings.heartbeatGlobal,
-                    heartbeatMode = Json.obj(o, "heartbeatMode").ifEmpty { "listen" },
+                    // 归一：只剩 listen|live（"off" 是首个版本写入过的档位值，读取时按 listen 处理；
+                    // 真正的"关闭"由 heartbeatOn 表达）
+                    heartbeatMode = if (Json.obj(o, "heartbeatMode") == "live") "live" else "listen",
                     remind = Json.objBool(o, "remind", true),
                     audioOnly = Json.objBool(o, "audioOnly", false),
                     voiceRoom = Json.objBool(o, "voiceRoom", false),

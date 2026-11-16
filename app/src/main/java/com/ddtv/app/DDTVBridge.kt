@@ -250,6 +250,9 @@ class DDTVBridge(private val context: Context, private val webView: WebView) {
             WatchHeartbeat.unregister(roomId)
         } else if (card.liveStatus == 1 && RoomManager.heartbeatAllowed(card, "live")) {
             WatchHeartbeat.register(roomId, card.uid)
+        } else if (com.ddtv.app.core.ListenPlayer.activeRoom() == roomId && RoomManager.heartbeatAllowed(card, "listen")) {
+            // listen 档：用户正在听这个房间，启用后应立刻开始上报
+            WatchHeartbeat.register(roomId, card.uid)
         }
     }
 
@@ -263,6 +266,8 @@ class DDTVBridge(private val context: Context, private val webView: WebView) {
         // 档位切换：先注销本房间，再按新档位判定是否恢复（避免旧档位残留会话）
         WatchHeartbeat.unregister(roomId)
         if (card.liveStatus == 1 && RoomManager.heartbeatAllowed(card, "live")) {
+            WatchHeartbeat.register(roomId, card.uid)
+        } else if (com.ddtv.app.core.ListenPlayer.activeRoom() == roomId && RoomManager.heartbeatAllowed(card, "listen")) {
             WatchHeartbeat.register(roomId, card.uid)
         }
         return JSONObject().put("code", 0).put("msg", "已切换为 $m").toString()

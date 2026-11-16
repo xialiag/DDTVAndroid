@@ -684,7 +684,8 @@ function renderRoomDetail(rid, container) {
     <h2>房间设置</h2>
     <div class="switch-row"><div class="sw-text"><div class="sw-label">开播自动录制</div><div class="sw-desc">检测到开播后自动开始录制</div></div>
       <label class="switch"><input type="checkbox" ${r.autoRecord?'checked':''} onchange="setAutoRecord(${r.roomId},this.checked)"><span class="slider"></span></label></div>
-    <div class="switch-row"><div class="sw-text"><div class="sw-label">连接弹幕</div><div class="sw-desc">接收弹幕消息与记录弹幕文件。<b>登录状态下会以你的账号进入该直播间，主播可见</b>。关闭后录制/听直播不受影响，仅不记录弹幕。</div></div>
+    <div class="switch-row"><div class="sw-text"><div class="sw-label">连接弹幕</div><div class="sw-desc">接收弹幕消息与记录弹幕文件。<b>登录状态下会以你的账号进入该直播间，主播可见</b>。关闭后录制/听直播不受影响，仅不记录弹幕。${
+      (state.settings&&state.settings.danmakuGlobal===false)?'<br><b style="color:var(--warn)">弹幕总开关已关闭，此处开启也不会连接</b>':''}</div></div>
       <label class="switch"><input type="checkbox" ${r.danmakuOpen?'checked':''} onchange="setDanmaku(${r.roomId},this.checked)"><span class="slider"></span></label></div>
     ${(state.settings&&state.settings.heartbeatGlobal)?`
     <div class="switch-row"><div class="sw-text"><div class="sw-label">小心心</div><div class="sw-desc">本房间是否上报观看时长(计入亲密度)。主播不可见，与弹幕无关。</div></div>

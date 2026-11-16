@@ -22,7 +22,7 @@ data class AppSettings(
     var remuxAfterLive: Boolean = true,  // 结束后转封装 mp4
     // ---- 小心心（观看时长上报）----
     var heartbeatGlobal: Boolean = false,   // 总闸：关=所有房间一律不上报
-    var heartbeatDefault: String = "listen", // 新房间默认档位: off|listen|live
+    var heartbeatDefault: String = "listen", // 新房间默认档位: off(不启用新房间) | listen | live
     var heartbeatMaxRooms: Int = 5,          // live 档并发上限（防风控）
     // ---- 弹幕 ----
     var danmakuGlobal: Boolean = true,       // 总闸：关=全部断开不再连
@@ -109,7 +109,7 @@ data class RoomCard(
     var quality: Int = 10000,
     var danmakuOpen: Boolean = false,     // 连接弹幕(登录态=以你的账号进入直播间,主播可见)；默认关
     var heartbeatOn: Boolean = false,     // 本房间是否启用小心心(总闸开启时才生效)
-    var heartbeatMode: String = "listen", // 本房间档位: off|listen|live
+    var heartbeatMode: String = "listen", // 本房间档位: listen | live（off 已废弃，读入时归一为 listen；关=heartbeatOn=false）
     var remind: Boolean = true,          // 开播/下播提醒（对应原版 IsRemind）
     var audioOnly: Boolean = false,      // 仅录制音频（media_type=1 纯音频流，省流量）
     var voiceRoom: Boolean = false,      // 语音直播间（电台/聊天室分区，只能录纯音频，无视频流）
