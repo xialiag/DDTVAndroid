@@ -1007,7 +1007,11 @@ object RoomManager {
             splitSizeMB = prefs.getLong("split_size_mb", 0),
             minFileSizeMB = prefs.getLong("min_file_size_mb", 0),
             remuxAfterLive = prefs.getBoolean("remux_after_live", true),
-            heartbeatGlobal = prefs.getBoolean("heartbeat_global", false),
+            // v0.7.65 迁移：旧版单一开关 watch_heartbeat 等价于"仅听直播时上报"，
+            // 已开启的老用户升级后应保持开启（映射为新总闸 + listen 档默认），
+            // 不能被静默丢弃成"关"。仅在从未写过新键时迁移一次。
+            heartbeatGlobal = prefs.getBoolean("heartbeat_global",
+                prefs.getBoolean("watch_heartbeat", false)),
             heartbeatDefault = prefs.getString("heartbeat_default", "listen") ?: "listen",
             heartbeatMaxRooms = prefs.getInt("heartbeat_max_rooms", 5),
             danmakuGlobal = prefs.getBoolean("danmaku_global", true),
@@ -1144,7 +1148,12 @@ object RoomManager {
                     autoRecord = Json.objBool(o, "autoRecord", true),
                     quality = Json.objInt(o, "quality", 10000),
                     danmakuOpen = Json.objBool(o, "danmakuOpen", false),
-                    heartbeatOn = Json.objBool(o, "heartbeatOn", false),
+                    // v0.7.65 迁移：旧数据没有 heartbeatOn/heartbeatMode 字段。旧版语义是
+                    // "全局开关开着 = 所有房间都按 仅听直播 上报"，因此无该字段的房间应随
+                    // 全局总闸一起继承（全局开→房间启用且 listen 档；全局关→不启用），
+                    // 否则老用户升级后全局迁移为开、房间却全关，表现为"开了但没生效"。
+                    heartbeatOn = if (o.has("heartbeatOn")) Json.objBool(o, "heartbeatOn", false)
+                                  else settings.heartbeatGlobal,
                     heartbeatMode = Json.obj(o, "heartbeatMode").ifEmpty { "listen" },
                     remind = Json.objBool(o, "remind", true),
                     audioOnly = Json.objBool(o, "audioOnly", false),
