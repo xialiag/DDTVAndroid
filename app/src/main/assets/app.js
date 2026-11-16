@@ -687,11 +687,16 @@ function renderRoomDetail(rid, container) {
     <div class="switch-row"><div class="sw-text"><div class="sw-label">连接弹幕</div><div class="sw-desc">接收弹幕消息与记录弹幕文件。<b>登录状态下会以你的账号进入该直播间，主播可见</b>。关闭后录制/听直播不受影响，仅不记录弹幕。${
       (state.settings&&state.settings.danmakuGlobal===false)?'<br><b style="color:var(--warn)">弹幕总开关已关闭，此处开启也不会连接</b>':''}</div></div>
       <label class="switch"><input type="checkbox" ${r.danmakuOpen?'checked':''} onchange="setDanmaku(${r.roomId},this.checked)"><span class="slider"></span></label></div>
-    ${(state.settings&&state.settings.heartbeatGlobal)?`
-    <div class="switch-row"><div class="sw-text"><div class="sw-label">小心心</div><div class="sw-desc">本房间是否上报观看时长(计入亲密度)。主播不可见，与弹幕无关。</div></div>
-      <label class="switch"><input type="checkbox" ${r.heartbeatOn?'checked':''} onchange="setRoomHeartbeat(${r.roomId},this.checked)"><span class="slider"></span></label></div>
-    ${r.heartbeatOn?`<div class="switch-row"><div class="sw-text"><div class="sw-label">上报档位</div><div class="sw-desc">仅听直播=播放期间上报;开播即挂=开播期间无人值守上报(有风控风险)</div></div>
-      <div class="sw-right"><div id="heartModeSel"></div></div></div>`:''}`:''}
+    ${(()=>{
+      const gOn = !!(state.settings && state.settings.heartbeatGlobal);
+      // 全局总闸关闭时仍显示区块（置灰），否则用户会以为"这里本来没有小心心"；
+      // 但开关不可点，并说明原因。
+      return `<div class="switch-row${gOn?'':' dimmed'}"><div class="sw-text"><div class="sw-label">小心心</div><div class="sw-desc">本房间是否上报观看时长(计入亲密度)。主播不可见，与弹幕无关。${
+        gOn ? '' : '<br><b style="color:var(--warn)">小心心总开关已关闭，此处设置不会生效</b>'}</div></div>
+      <label class="switch"><input type="checkbox" ${r.heartbeatOn?'checked':''} ${gOn?'':'disabled'} onchange="setRoomHeartbeat(${r.roomId},this.checked)"><span class="slider"></span></label></div>
+    ${(gOn && r.heartbeatOn)?`<div class="switch-row"><div class="sw-text"><div class="sw-label">上报档位</div><div class="sw-desc">仅听直播=播放期间上报;开播即挂=开播期间无人值守上报(有风控风险)</div></div>
+      <div class="sw-right"><div id="heartModeSel"></div></div></div>`:''}`;
+    })()}
     <div class="switch-row"><div class="sw-text"><div class="sw-label">仅录音频</div><div class="sw-desc">${r.voiceRoom ? '电台/聊天室分区，默认开启（可关闭）' : '只拉取音频流录制，省流量（下次录制生效）'}</div></div>
       <label class="switch"><input type="checkbox" ${r.audioOnly?'checked':''} onchange="setAudioOnlyRoom(${r.roomId},this.checked)"><span class="slider"></span></label></div>
     <div class="switch-row"><div class="sw-text"><div class="sw-label">开播提醒</div><div class="sw-desc">开播/下播时发送系统通知</div></div>
@@ -1876,7 +1881,14 @@ function updateStatusbar() {
   $('#sbRec').textContent=rec+' 录制中';
   $('#sbDot').className='sb-dot'+(rec>0?' run':'');
   $('#sbWatch').textContent='监控 '+state.rooms.length+' 房间';
-  const s=state.settings; if(s){$('#sbPoll').textContent='轮询 '+s.pollInterval+'s';$('#sbHeart').style.display=s.watchHeartbeat?'':'none';}
+  const s=state.settings;
+  if(s){
+    $('#sbPoll').textContent='轮询 '+s.pollInterval+'s';
+    // 状态栏"挂机中"：按新模型判断——总闸开 且 存在已启用小心心的房间
+    const hbRooms=(state.rooms||[]).filter(x=>x.heartbeatOn).length;
+    const hbOn=!!s.heartbeatGlobal && hbRooms>0;
+    const el=$('#sbHeart'); if(el){ el.style.display=hbOn?'':'none'; el.lastChild.textContent=' 挂机中('+hbRooms+')'; }
+  }
   const acc=state.account; $('#sbRight').textContent=(acc&&acc.logged?acc.uname:'未登录')+' · v'+(state.version||'');
 }
 
