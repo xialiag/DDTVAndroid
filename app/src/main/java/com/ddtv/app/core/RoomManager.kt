@@ -505,16 +505,19 @@ object RoomManager {
                 ensureRecording(card)
             }
             // 安全网（弹幕）：开播边沿若因并发上限被跳过，名额释放后不会有第二次机会
-            // （liveStatusPrev 已置 true，不会再进开播分支）。每轮在"应当连但没连"时补连；
-            // ensureDanmaku 内部有 containsKey/上限/全局闸门判断，重复调用零成本。
-            if (card.liveStatus == 1 && card.danmakuOpen && !danmakuClients.containsKey(card.roomId)) {
+            // （liveStatusPrev 已置 true，不会再进开播分支），故每轮补连。
+            // 前置 danmakuGlobal 短路：否则全局关闭时每轮都会进 ensureDanmaku 并打一条
+            // "跳过连弹幕"日志（每房间每 15s 一条噪声）。
+            if (card.liveStatus == 1 && settings.danmakuGlobal && card.danmakuOpen
+                && !danmakuClients.containsKey(card.roomId)) {
                 ensureDanmaku(card)
             }
-            // 安全网（小心心 live 档）：同上，达上限被跳过或会话因连续失败退出后，
-            // 由轮询在"应当上报但没在报"时补位。register 内部已做闸门/去重/上限判断。
-            // 未登录时不补位：run() 会立刻退出，导致每轮(15s)建线程+打日志的噪声。
-            if (card.liveStatus == 1 && AccountManager.isLoggedIn()
-                && heartbeatAllowed(card, "live") && !WatchHeartbeat.isActive(card.roomId)) {
+            // 安全网（小心心 live 档）：同上，达上限被跳过或会话因连续失败退出后补位。
+            // 条件全部内联（不调 heartbeatAllowed）以便短路；登录检查放最后——未登录时
+            // run() 会立刻退出，若每轮都 register 就会产生建线程+打日志的 15s 噪声。
+            if (card.liveStatus == 1 && settings.heartbeatGlobal && card.heartbeatOn
+                && card.heartbeatMode == "live" && !WatchHeartbeat.isActive(card.roomId)
+                && AccountManager.isLoggedIn()) {   // 登录检查放最后：最重的调用，最少触发
                 WatchHeartbeat.register(card.roomId, card.uid)
             }
         }
@@ -1160,8 +1163,10 @@ object RoomManager {
         try {
             val raw = prefs.getString("rooms", "[]") ?: "[]"
             val arr = JSONArray(raw)
+            var migrated = false
             for (i in 0 until arr.length()) {
                 val o = arr.getJSONObject(i)
+                if (!o.has("heartbeatOn")) migrated = true
                 val card = RoomCard(
                     roomId = Json.objLong(o, "roomId"),
                     shortId = Json.objLong(o, "shortId"),
@@ -1198,6 +1203,13 @@ object RoomManager {
                     liveStatusPrev = false,
                 )
                 rooms[card.roomId] = card
+            }
+            // 补种只写内存时，未动过的房间永远不带 heartbeatOn 字段 → 每次启动按当时的
+            // 全局总闸重新补种。用户关掉总闸再重启，这些房间就会从"启用"漂移成"关闭"。
+            // 补种过一次就落盘，状态从此稳定。
+            if (migrated) {
+                saveRooms()
+                Logger.i("Room", "房间小心心字段补种并已持久化")
             }
             Logger.i("Room", "加载房间 ${rooms.size} 个")
         } catch (e: Exception) {

@@ -193,10 +193,18 @@ object ListenPlayer {
         }
     }
 
+    /** 停止收听时是否该注销心跳：只有 listen 档才随播放结束而停。
+     *  live 档（挂机）与"是否在收听"无关，其生命周期由开播/下播管理；
+     *  若此处无条件 unregister，用户暂停听直播会把正在挂机的心跳也掐断。 */
+    private fun shouldUnregisterOnStop(roomId: Long): Boolean {
+        val card = RoomManager.getRoom(roomId) ?: return true
+        return RoomManager.heartbeatAllowed(card, "listen") || card.heartbeatMode != "live"
+    }
+
     private fun releaseAndClear() {
         // 停止观看 → 注销观看心跳(对齐原版：播放窗关闭即 Unregister)
         val rid = currentRoomId
-        if (rid != 0L) WatchHeartbeat.unregister(rid)
+        if (rid != 0L && shouldUnregisterOnStop(rid)) WatchHeartbeat.unregister(rid)
         seq++  // 使所有在途操作失效
         releasePlayer()
         currentRoomId = 0L
@@ -212,7 +220,7 @@ object ListenPlayer {
         if (p != null && (p.playWhenReady || !paused)) {
             // 播放中/缓冲中 → 暂停(保留房间号)
             Logger.i("Listen", "[player] 点击暂停(room=$rid)")
-            WatchHeartbeat.unregister(rid)  // 暂停=不再观看，停止上报
+            if (shouldUnregisterOnStop(rid)) WatchHeartbeat.unregister(rid)  // 暂停=不再观看；live 档不随暂停停
             seq++
             releasePlayer()
             paused = true
