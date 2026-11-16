@@ -504,6 +504,19 @@ object RoomManager {
             if (card.liveStatus == 1 && card.autoRecord && !LiveRecorder.isRecording(card.roomId) && !card.manualStop) {
                 ensureRecording(card)
             }
+            // 安全网（弹幕）：开播边沿若因并发上限被跳过，名额释放后不会有第二次机会
+            // （liveStatusPrev 已置 true，不会再进开播分支）。每轮在"应当连但没连"时补连；
+            // ensureDanmaku 内部有 containsKey/上限/全局闸门判断，重复调用零成本。
+            if (card.liveStatus == 1 && card.danmakuOpen && !danmakuClients.containsKey(card.roomId)) {
+                ensureDanmaku(card)
+            }
+            // 安全网（小心心 live 档）：同上，达上限被跳过或会话因连续失败退出后，
+            // 由轮询在"应当上报但没在报"时补位。register 内部已做闸门/去重/上限判断。
+            // 未登录时不补位：run() 会立刻退出，导致每轮(15s)建线程+打日志的噪声。
+            if (card.liveStatus == 1 && AccountManager.isLoggedIn()
+                && heartbeatAllowed(card, "live") && !WatchHeartbeat.isActive(card.roomId)) {
+                WatchHeartbeat.register(card.roomId, card.uid)
+            }
         }
     }
 
@@ -1022,10 +1035,10 @@ object RoomManager {
                 "off", "live" -> hd
                 else -> "listen"
             },
-            heartbeatMaxRooms = prefs.getInt("heartbeat_max_rooms", 5),
+            heartbeatMaxRooms = prefs.getInt("heartbeat_max_rooms", 5).coerceIn(1, 50),
             danmakuGlobal = prefs.getBoolean("danmaku_global", true),
             danmakuDefault = prefs.getBoolean("danmaku_default", false),
-            danmakuMaxRooms = prefs.getInt("danmaku_max_rooms", 10),
+            danmakuMaxRooms = prefs.getInt("danmaku_max_rooms", 10).coerceIn(1, 100),
             saveCover = prefs.getBoolean("save_cover", true),
             remindLive = prefs.getBoolean("remind_live", true),
             blockBarrage = prefs.getString("block_barrage", "") ?: "",

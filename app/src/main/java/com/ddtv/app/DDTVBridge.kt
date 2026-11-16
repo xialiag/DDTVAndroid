@@ -243,17 +243,28 @@ class DDTVBridge(private val context: Context, private val webView: WebView) {
 
     /** 房间级：启用/停用小心心。停用立即注销该房间会话；启用时按档位立即生效（live 档且在播） */
     @JavascriptInterface
-    fun setRoomHeartbeat(roomId: Long, on: Boolean) {
+    fun setRoomHeartbeat(roomId: Long, on: Boolean): String {
         RoomManager.updateRoom(roomId) { it.heartbeatOn = on }
-        val card = RoomManager.getRoom(roomId) ?: return
+        val card = RoomManager.getRoom(roomId)
+            ?: return JSONObject().put("code", -1).put("msg", "房间不存在").toString()
         if (!on) {
             WatchHeartbeat.unregister(roomId)
-        } else if (card.liveStatus == 1 && RoomManager.heartbeatAllowed(card, "live")) {
+            return JSONObject().put("code", 0).put("msg", "本房间已停用小心心").toString()
+        }
+        val allowed = RoomManager.heartbeatAllowed(card, "live") ||
+                RoomManager.heartbeatAllowed(card, "listen")
+        if (!allowed) {
+            // 总闸关闭是唯一"开关看着开了却不上报"的静默场景，必须告知
+            val msg = if (!RoomManager.settings.heartbeatGlobal) "已启用，但小心心总开关关闭，实际不会上报"
+                      else "已启用，但未在播放且非 live 档，暂不上报"
+            return JSONObject().put("code", 0).put("msg", msg).toString()
+        }
+        if (card.liveStatus == 1 && RoomManager.heartbeatAllowed(card, "live")) {
             WatchHeartbeat.register(roomId, card.uid)
         } else if (com.ddtv.app.core.ListenPlayer.activeRoom() == roomId && RoomManager.heartbeatAllowed(card, "listen")) {
-            // listen 档：用户正在听这个房间，启用后应立刻开始上报
             WatchHeartbeat.register(roomId, card.uid)
         }
+        return JSONObject().put("code", 0).put("msg", "本房间已启用小心心").toString()
     }
 
     /** 房间级：设置小心心档位 listen|live。切换后按新档位即时注销/注册。
@@ -513,11 +524,16 @@ class DDTVBridge(private val context: Context, private val webView: WebView) {
                 splitSizeMB = o.optLong("splitSizeMB", splitSizeMB)
                 remuxAfterLive = o.optBoolean("remuxAfterLive", remuxAfterLive)
                 heartbeatGlobal = o.optBoolean("heartbeatGlobal", heartbeatGlobal)
-                heartbeatDefault = o.optString("heartbeatDefault", heartbeatDefault)
-                heartbeatMaxRooms = o.optInt("heartbeatMaxRooms", heartbeatMaxRooms)
+                heartbeatDefault = when (val hd = o.optString("heartbeatDefault", heartbeatDefault)) {
+                    "off", "live" -> hd; else -> "listen"
+                }
+                // 钳制到 [1,50]：<=0 会让闸门把 maxRooms>0 短路成"无上限"，
+                // 无节制上报是最需要防的风控场景，不能依赖前端 min 属性。
+                heartbeatMaxRooms = o.optInt("heartbeatMaxRooms", heartbeatMaxRooms).coerceIn(1, 50)
                 danmakuGlobal = o.optBoolean("danmakuGlobal", danmakuGlobal)
                 danmakuDefault = o.optBoolean("danmakuDefault", danmakuDefault)
-                danmakuMaxRooms = o.optInt("danmakuMaxRooms", danmakuMaxRooms)
+                // 钳制到 [1,100]：同上（0/负 = 无上限 = 同时对大量直播间暴露身份）
+                danmakuMaxRooms = o.optInt("danmakuMaxRooms", danmakuMaxRooms).coerceIn(1, 100)
                 remindLive = o.optBoolean("remindLive", remindLive)
                 blockBarrage = o.optString("blockBarrage", blockBarrage)
                 fileNameFormat = o.optString("fileNameFormat", fileNameFormat)

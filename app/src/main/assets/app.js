@@ -2153,9 +2153,12 @@ function togglePause() {
   } catch(e){ _ctlBusyUntil = 0; if (ctl) ctl.classList.remove('busy'); }
 }
 function setRoomHeartbeat(rid,on){
-  try{ AndroidBridge.setRoomHeartbeat(rid,on); }catch(e){ toast('操作失败: '+e,'err'); return; }
+  let res; try{ res=JSON.parse(AndroidBridge.setRoomHeartbeat(rid,on)); }
+  catch(e){ toast('操作失败: '+e,'err'); if(state._detailOpen) renderRoomDetail(rid); return; }
+  if(res.code<0){ toast(res.msg||'操作失败','err'); if(state._detailOpen) renderRoomDetail(rid); return; }
   const r=state.rooms.find(x=>x.roomId===rid); if(r) r.heartbeatOn=on;
-  toast(on?'本房间已启用小心心':'本房间已停用小心心','ok');
+  // 后端会区分"已启用但不会上报"（总闸关闭/未在播放），如实透出而不是一律报成功
+  toast(res.msg||(on?'本房间已启用小心心':'本房间已停用小心心'), (on&&/不会上报|暂不上报/.test(res.msg||''))?'err':'ok');
   if(state._detailOpen&&state.currentRoom===rid) renderRoomDetail(rid);
 }
 function setRoomHeartbeatMode(rid,mode){

@@ -47,10 +47,13 @@ object WatchHeartbeat {
         }
         if (limitHit) {
             log("房间 $roomId 已达小心心并发上限 ${RoomManager.settings.heartbeatMaxRooms}，跳过上报")
-        } else {
-            log("房间 $roomId 观看时长心跳启动")
         }
+        // 不在这里说"已启动"：run() 是异步线程，可能立刻因未登录/未开播退出。
+        // 真实启动由 run() 打完 E 之后汇报，避免日志与实际不符。
     }
+
+    /** 某房间当前是否有活跃上报会话（供轮询补位判断，避免重复 register 的日志噪声） */
+    fun isActive(roomId: Long): Boolean = sessions.containsKey(roomId)
 
     fun unregister(roomId: Long) {
         synchronized(sessionLock) { sessions.remove(roomId) }?.let { it.stopFlag.set(true) }
@@ -70,6 +73,9 @@ object WatchHeartbeat {
         val anchorUid = session.anchorUid
         var failures = 0
         try {
+            // 已被注销（register 后立刻 unregister / 档位切换）：不要再发任何请求，
+            // 否则会向 B站发出一份"进入房间"的 E 上报，违背用户的关闭意图。
+            if (session.stopFlag.get()) return
             // 未登录直接退出
             if (!AccountManager.isLoggedIn()) {
                 log("房间 $roomId 未登录，观看时长心跳不启动")
@@ -92,6 +98,7 @@ object WatchHeartbeat {
             Logger.d("Heartbeat", "构造 device buvid=${buvid.take(6)}..(${buvid.length}) 含特殊字符=${buvid.any { it == '"' || it == '\\' || it == '%' }} idJson=$idJson")
             val csrf = account.csrf.ifEmpty { BiliLiveApi.extractCsrf(account.cookie) }
 
+            if (session.stopFlag.get()) return
             var secret = sendE(idJson, deviceJson, anchorUid, csrf)
             if (secret == null) {
                 failures++
@@ -116,6 +123,7 @@ object WatchHeartbeat {
                     return
                 }
                 val acc = AccountManager.account ?: return
+                if (session.stopFlag.get()) break
                 val next = sendX(idJson, deviceJson, anchorUid, acc.csrf.ifEmpty { BiliLiveApi.extractCsrf(acc.cookie) }, secret!!)
                 if (next == null) {
                     failures++
