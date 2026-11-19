@@ -168,8 +168,6 @@ object RoomManager {
             autoRecord = settings.autoRecordDefault,
             quality = settings.defaultQuality,
             danmakuOpen = settings.danmakuDefault,
-            heartbeatOn = settings.heartbeatDefault != "off",
-            heartbeatMode = if (settings.heartbeatDefault == "off") "listen" else settings.heartbeatDefault,
         )
         rooms[realRoomId] = card
         saveRooms()
@@ -196,7 +194,7 @@ object RoomManager {
             card.liveStatusPrev = true
             ensureDanmaku(card)
             if (card.autoRecord) ensureRecording(card)
-            if (heartbeatAllowed(card, "live")) WatchHeartbeat.register(card.roomId, card.uid)
+            if (heartbeatAllowed()) WatchHeartbeat.register(card.roomId, card.uid)
         }
         return 1
     }
@@ -220,8 +218,6 @@ object RoomManager {
                 autoRecord = settings.autoRecordDefault,
                 quality = settings.defaultQuality,
                 danmakuOpen = settings.danmakuDefault,
-                heartbeatOn = settings.heartbeatDefault != "off",
-                heartbeatMode = if (settings.heartbeatDefault == "off") "listen" else settings.heartbeatDefault,
             )
             rooms[u.roomId] = card
             saveRooms()
@@ -231,7 +227,7 @@ object RoomManager {
                 card.liveStatusPrev = true
                 ensureDanmaku(card)
                 if (card.autoRecord) ensureRecording(card)
-                if (heartbeatAllowed(card, "live")) WatchHeartbeat.register(card.roomId, card.uid)
+                if (heartbeatAllowed()) WatchHeartbeat.register(card.roomId, card.uid)
             }
             return 1
         }
@@ -519,11 +515,8 @@ object RoomManager {
                 && !inDanmakuCooldown(card.roomId)) {
                 ensureDanmaku(card)
             }
-            // 安全网（小心心 live 档）：同上，达上限被跳过或会话因连续失败退出后补位。
-            // 条件全部内联（不调 heartbeatAllowed）以便短路；登录检查放最后——未登录时
-            // run() 会立刻退出，若每轮都 register 就会产生建线程+打日志的 15s 噪声。
-            if (card.liveStatus == 1 && settings.heartbeatGlobal && card.heartbeatOn
-                && card.heartbeatMode == "live" && !WatchHeartbeat.isActive(card.roomId)
+            // 安全网（小心心）：会话因连续失败退出后补位。条件内联短路，登录检查放最后。
+            if (card.liveStatus == 1 && settings.heartbeatGlobal && !WatchHeartbeat.isActive(card.roomId)
                 && !WatchHeartbeat.inCooldown(card.roomId)   // 连续失败后 5 分钟内不重试，避免风暴
                 && AccountManager.isLoggedIn()) {            // 登录检查放最后：最重的调用，最少触发
                 WatchHeartbeat.register(card.roomId, card.uid)
@@ -549,7 +542,7 @@ object RoomManager {
             if (card.autoRecord) ensureRecording(card)
             ensureDanmaku(card)
             // 小心心 live 档：开播即上报（挂机）；listen 档由 ListenPlayer 在播放时注册
-            if (heartbeatAllowed(card, "live")) WatchHeartbeat.register(card.roomId, card.uid)
+            if (heartbeatAllowed()) WatchHeartbeat.register(card.roomId, card.uid)
         } else if (!isLive && wasLive) {
             // 下播（日志经 notifyLog 打一条"直播结束";不再单独 Logger.i 避免前端/DebugServer 双打）
             notifyLog(card.roomId, "info", "直播结束")
@@ -746,29 +739,12 @@ object RoomManager {
 
     // ============ 弹幕调度 ============
 
-    // ============ 小心心 / 弹幕 统一闸门 ============
-    // 小心心（live-trace E/X 上报）：三层收敛
-    //   全局总闸 heartbeatGlobal → 房间 heartbeatOn → 房间档位 heartbeatMode
-    //   本函数只回答"当前是否应上报"，供 ListenPlayer 与开播/下播调度共用。
-    fun heartbeatAllowed(card: RoomCard, phase: String): Boolean {
-        val st = settings
-        if (!st.heartbeatGlobal) return false
-        if (!card.heartbeatOn) return false
-        return when (card.heartbeatMode) {
-            "live" -> phase == "live"          // 开播期间（挂机）
-            "listen" -> phase == "listen"      // 仅听直播播放期间
-            else -> false
-        }
-    }
+    // ============ 小心心闸门 ============
+    // 小心心（live-trace E/X 上报）：总开关打开即对在播房间上报（挂机，不需要正在听）。
+    fun heartbeatAllowed(): Boolean = settings.heartbeatGlobal
 
-    /** 弹幕是否允许连接：全局总闸 + 房间开关 + 并发上限（上限防 50 条 WS 同时以本人身份进房） */
-    fun danmakuAllowed(card: RoomCard): Boolean {
-        val st = settings
-        if (!st.danmakuGlobal) return false
-        if (!card.danmakuOpen) return false
-        val limit = if (st.danmakuMaxRooms > 0) st.danmakuMaxRooms else Int.MAX_VALUE
-        return danmakuClients.size < limit
-    }
+    /** 弹幕是否允许连接：全局总开关 + 房间开关 */
+    fun danmakuAllowed(card: RoomCard): Boolean = settings.danmakuGlobal && card.danmakuOpen
 
     private fun inDanmakuCooldown(roomId: Long): Boolean {
         val t = danmakuCooldown[roomId] ?: return false
@@ -783,7 +759,7 @@ object RoomManager {
         // putIfAbsent 失败即说明已有人连上，直接丢弃本次的新实例。
         if (danmakuClients.containsKey(card.roomId)) return
         if (!danmakuAllowed(card)) {
-            if (card.danmakuOpen) Logger.i("Danmaku", "[${card.roomId}] 跳过连弹幕（全局关闭或已达并发上限 ${settings.danmakuMaxRooms}）")
+            if (card.danmakuOpen) Logger.i("Danmaku", "[${card.roomId}] 跳过连弹幕（弹幕总开关关闭）")
             return
         }
         val client = DanmakuClient(card)
@@ -1046,19 +1022,11 @@ object RoomManager {
             splitSizeMB = prefs.getLong("split_size_mb", 0),
             minFileSizeMB = prefs.getLong("min_file_size_mb", 0),
             remuxAfterLive = prefs.getBoolean("remux_after_live", true),
-            // v0.7.65 迁移：旧版单一开关 watch_heartbeat 等价于"仅听直播时上报"，
-            // 已开启的老用户升级后应保持开启（映射为新总闸 + listen 档默认），
-            // 不能被静默丢弃成"关"。仅在从未写过新键时迁移一次。
+            // 迁移：旧版单一开关 watch_heartbeat / heartbeat_global 都映射到新总开关，老用户不丢设置
             heartbeatGlobal = prefs.getBoolean("heartbeat_global",
                 prefs.getBoolean("watch_heartbeat", false)),
-            heartbeatDefault = when (val hd = prefs.getString("heartbeat_default", "listen")) {
-                "off", "live" -> hd
-                else -> "listen"
-            },
-            heartbeatMaxRooms = prefs.getInt("heartbeat_max_rooms", 5).coerceIn(1, 50),
             danmakuGlobal = prefs.getBoolean("danmaku_global", true),
             danmakuDefault = prefs.getBoolean("danmaku_default", false),
-            danmakuMaxRooms = prefs.getInt("danmaku_max_rooms", 10).coerceIn(1, 100),
             saveCover = prefs.getBoolean("save_cover", true),
             remindLive = prefs.getBoolean("remind_live", true),
             blockBarrage = prefs.getString("block_barrage", "") ?: "",
@@ -1093,11 +1061,8 @@ object RoomManager {
             .putLong("min_file_size_mb", settings.minFileSizeMB)
             .putBoolean("remux_after_live", settings.remuxAfterLive)
             .putBoolean("heartbeat_global", settings.heartbeatGlobal)
-            .putString("heartbeat_default", settings.heartbeatDefault)
-            .putInt("heartbeat_max_rooms", settings.heartbeatMaxRooms)
             .putBoolean("danmaku_global", settings.danmakuGlobal)
             .putBoolean("danmaku_default", settings.danmakuDefault)
-            .putInt("danmaku_max_rooms", settings.danmakuMaxRooms)
             .putBoolean("save_cover", settings.saveCover)
             .putBoolean("remind_live", settings.remindLive)
             .putString("block_barrage", settings.blockBarrage)
@@ -1123,16 +1088,9 @@ object RoomManager {
         if (!settings.heartbeatGlobal) {
             WatchHeartbeat.stopAll()
         } else {
-            // 总闸重新打开：live 档在播房间补注册；listen 档若 ListenPlayer 正在收听该房间，
-            // 也必须补注册（否则用户重新开总闸后"正在听却没上报"，listen 档看似失灵）。
-            val listeningRoom = ListenPlayer.activeRoom()
+            // 总闸重新打开：为所有在播房间补注册（挂机语义）
             rooms.values.forEach { c ->
-                if (c.liveStatus != 1) return@forEach
-                if (heartbeatAllowed(c, "live")) {
-                    WatchHeartbeat.register(c.roomId, c.uid)
-                } else if (c.roomId == listeningRoom && heartbeatAllowed(c, "listen")) {
-                    WatchHeartbeat.register(c.roomId, c.uid)
-                }
+                if (c.liveStatus == 1) WatchHeartbeat.register(c.roomId, c.uid)
             }
         }
         // 弹幕总闸关闭 → 全部断开；默认值变化不影响已加房间（只影响新建房间）
@@ -1161,8 +1119,6 @@ object RoomManager {
                     put("autoRecord", card.autoRecord)
                     put("quality", card.quality)
                     put("danmakuOpen", card.danmakuOpen)
-                    put("heartbeatOn", card.heartbeatOn)
-                    put("heartbeatMode", card.heartbeatMode)
                     put("remind", card.remind)
                     put("audioOnly", card.audioOnly)
                     put("voiceRoom", card.voiceRoom)
@@ -1180,10 +1136,8 @@ object RoomManager {
         try {
             val raw = prefs.getString("rooms", "[]") ?: "[]"
             val arr = JSONArray(raw)
-            var migrated = false
             for (i in 0 until arr.length()) {
                 val o = arr.getJSONObject(i)
-                if (!o.has("heartbeatOn")) migrated = true
                 val card = RoomCard(
                     roomId = Json.objLong(o, "roomId"),
                     shortId = Json.objLong(o, "shortId"),
@@ -1200,15 +1154,6 @@ object RoomManager {
                     autoRecord = Json.objBool(o, "autoRecord", true),
                     quality = Json.objInt(o, "quality", 10000),
                     danmakuOpen = Json.objBool(o, "danmakuOpen", false),
-                    // v0.7.65 迁移：旧数据没有 heartbeatOn/heartbeatMode 字段。旧版语义是
-                    // "全局开关开着 = 所有房间都按 仅听直播 上报"，因此无该字段的房间应随
-                    // 全局总闸一起继承（全局开→房间启用且 listen 档；全局关→不启用），
-                    // 否则老用户升级后全局迁移为开、房间却全关，表现为"开了但没生效"。
-                    heartbeatOn = if (o.has("heartbeatOn")) Json.objBool(o, "heartbeatOn", false)
-                                  else settings.heartbeatGlobal,
-                    // 归一：只剩 listen|live（"off" 是首个版本写入过的档位值，读取时按 listen 处理；
-                    // 真正的"关闭"由 heartbeatOn 表达）
-                    heartbeatMode = if (Json.obj(o, "heartbeatMode") == "live") "live" else "listen",
                     remind = Json.objBool(o, "remind", true),
                     audioOnly = Json.objBool(o, "audioOnly", false),
                     voiceRoom = Json.objBool(o, "voiceRoom", false),
@@ -1220,13 +1165,6 @@ object RoomManager {
                     liveStatusPrev = false,
                 )
                 rooms[card.roomId] = card
-            }
-            // 补种只写内存时，未动过的房间永远不带 heartbeatOn 字段 → 每次启动按当时的
-            // 全局总闸重新补种。用户关掉总闸再重启，这些房间就会从"启用"漂移成"关闭"。
-            // 补种过一次就落盘，状态从此稳定。
-            if (migrated) {
-                saveRooms()
-                Logger.i("Room", "房间小心心字段补种并已持久化")
             }
             Logger.i("Room", "加载房间 ${rooms.size} 个")
         } catch (e: Exception) {

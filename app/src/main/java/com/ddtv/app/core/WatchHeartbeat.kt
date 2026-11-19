@@ -39,31 +39,17 @@ object WatchHeartbeat {
     }
 
     fun register(roomId: Long, anchorUid: Long) {
-        // 闸门收口在管理器内（对齐原版 WatchHeartbeatManager.Register）：
-        // 全局总闸 + 房间 heartbeatOn + 房间档位 live/listen 任一生效才放行。
+        // 闸门收口在管理器内：小心心总开关打开才放行（房间级开关/档位已移除）。
         if (roomId <= 0) return
-        val card = RoomManager.getRoom(roomId)
-        if (card == null || !(RoomManager.heartbeatAllowed(card, "live") || RoomManager.heartbeatAllowed(card, "listen"))) return
-        // 上限检查必须在锁内：checkLiveTransition(轮询线程) 与 setRoomHeartbeat(UI 线程)
-        // 可能并发 register，锁外检查会让两个房间同时通过上限判定，多报一个。
-        // 日志移到锁外：Logger 会做 IO/回调，持锁 IO 会阻塞其它 register/unregister。
-        var limitHit = false
+        if (!RoomManager.settings.heartbeatGlobal) return
+        // 锁内 check-创建，避免并发 register 同一房间启动孤儿会话。
         synchronized(sessionLock) {
             if (sessions.containsKey(roomId)) return
-            val maxRooms = RoomManager.settings.heartbeatMaxRooms
-            if (maxRooms > 0 && sessions.size >= maxRooms) {
-                limitHit = true
-                return
-            }
             val session = Session(roomId, anchorUid)
             sessions[roomId] = session
             session.thread = Thread({ run(session) }, "Heartbeat-$roomId").also { it.isDaemon = true; it.start() }
         }
-        if (limitHit) {
-            log("房间 $roomId 已达小心心并发上限 ${RoomManager.settings.heartbeatMaxRooms}，跳过上报")
-        }
-        // 不在这里说"已启动"：run() 是异步线程，可能立刻因未登录/未开播退出。
-        // 真实启动由 run() 打完 E 之后汇报，避免日志与实际不符。
+        // 不在这里说"已启动"：run() 异步，可能立刻因未登录/未开播退出，真实启动由 run() 汇报。
     }
 
     /** 某房间当前是否有活跃上报会话（供轮询补位判断，避免重复 register 的日志噪声） */
@@ -74,8 +60,10 @@ object WatchHeartbeat {
     }
 
     fun stopAll() {
-        sessions.values.forEach { it.stopFlag.set(true) }
-        sessions.clear()
+        synchronized(sessionLock) {
+            sessions.values.forEach { it.stopFlag.set(true) }
+            sessions.clear()
+        }
     }
 
     private fun log(msg: String) {

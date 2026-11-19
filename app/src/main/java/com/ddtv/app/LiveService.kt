@@ -200,20 +200,29 @@ class LiveService : Service() {
             )
             val title = if (isLive) "${card.name} 开播了" else "${card.name} 下播了"
             val text = if (isLive) card.title.ifEmpty { "点击查看直播" } else "本次直播已结束"
+            // 卡片式副标题：分区 · 人气（开播时给出直播间上下文，更像直播间卡片）
+            val sub = buildString {
+                if (card.areaName.isNotEmpty()) append(card.areaName)
+                if (isLive && card.popularity > 0) { if (isNotEmpty()) append(" · "); append("人气 ").append(card.popularity) }
+                if (isEmpty()) append(if (isLive) "正在直播" else "")
+            }
 
             fun build(coverPath: String? = null): android.app.Notification {
                 val b = NotificationCompat.Builder(this, CHANNEL_REMIND)
                     .setContentTitle(title)
                     .setContentText(text)
+                    .setSubText(sub.ifEmpty { null })
                     .setSmallIcon(R.drawable.ic_stat_ddtv)
                     .setContentIntent(pi)
                     .setAutoCancel(true)
                     .setPriority(NotificationCompat.PRIORITY_HIGH)
                     .setCategory(NotificationCompat.CATEGORY_EVENT)
+                    .setStyle(NotificationCompat.BigTextStyle().bigText(text))
                 if (coverPath != null) {
                     try {
                         val bmp = android.graphics.BitmapFactory.decodeFile(coverPath)
                         if (bmp != null) {
+                            b.setLargeIcon(bmp)
                             b.setStyle(NotificationCompat.BigPictureStyle().bigPicture(bmp)
                                 .setBigContentTitle(title).setSummaryText(text))
                         }

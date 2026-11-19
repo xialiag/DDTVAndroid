@@ -40,9 +40,13 @@ object ListenPlayer {
     /** 操作序号：停止/暂停/失败/重建均递增，过期的取流与构建直接放弃 */
     @Volatile private var seq = 0L
 
-    fun init(context: Context) { appCtx = context.applicationContext }
+    fun init(context: Context) {
+        appCtx = context.applicationContext
+        ListenNotify.init(context)
+    }
 
     fun activeRoom(): Long = currentRoomId
+    fun isPlaying(): Boolean = playing
 
     /** 开始收听；统一主线程调度(@JavascriptInterface 回调在 WebView 线程,ExoPlayer 操作必须在主线程) */
     fun start(roomId: Long) { mainHandler.post { doStart(roomId) } }
@@ -170,8 +174,6 @@ object ListenPlayer {
                 playWhenReady = true
             }
             player = p
-            // 对齐原版：App 内真正开始播放(=观看)才上报观看时长/进房；停止/暂停/切房/失败即注销(见 releaseAndClear)
-            WatchHeartbeat.register(roomId, RoomManager.getRoom(roomId)?.uid ?: 0L)
         } catch (e: Exception) {
             Logger.e("Listen", "[player] 播放器构建失败: ${e.message}")
             if (s == seq) finishError(roomId, "播放器初始化失败")
@@ -181,6 +183,8 @@ object ListenPlayer {
     private fun notify(roomId: Long, p: Boolean, label: String) {
         playing = p
         try { listener?.invoke(roomId, p, label) } catch (_: Exception) {}
+        // 通知栏跟随播放状态（仿 B 站直播间卡片）
+        try { ListenNotify.show(roomId, p, label) } catch (_: Exception) {}
     }
 
     /** 失败：递增序号使在途取流/重试全部失效，释放并复位(统一主线程释放 player) */
@@ -193,18 +197,8 @@ object ListenPlayer {
         }
     }
 
-    /** 停止收听时是否该注销心跳：只有 listen 档才随播放结束而停。
-     *  live 档（挂机）与"是否在收听"无关，其生命周期由开播/下播管理；
-     *  若此处无条件 unregister，用户暂停听直播会把正在挂机的心跳也掐断。 */
-    private fun shouldUnregisterOnStop(roomId: Long): Boolean {
-        val card = RoomManager.getRoom(roomId) ?: return true
-        return RoomManager.heartbeatAllowed(card, "listen") || card.heartbeatMode != "live"
-    }
-
     private fun releaseAndClear() {
-        // 停止观看 → 注销观看心跳(对齐原版：播放窗关闭即 Unregister)
-        val rid = currentRoomId
-        if (rid != 0L && shouldUnregisterOnStop(rid)) WatchHeartbeat.unregister(rid)
+        try { ListenNotify.cancel() } catch (_: Exception) {}
         seq++  // 使所有在途操作失效
         releasePlayer()
         currentRoomId = 0L
@@ -220,7 +214,6 @@ object ListenPlayer {
         if (p != null && (p.playWhenReady || !paused)) {
             // 播放中/缓冲中 → 暂停(保留房间号)
             Logger.i("Listen", "[player] 点击暂停(room=$rid)")
-            if (shouldUnregisterOnStop(rid)) WatchHeartbeat.unregister(rid)  // 暂停=不再观看；live 档不随暂停停
             seq++
             releasePlayer()
             paused = true
