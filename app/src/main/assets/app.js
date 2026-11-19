@@ -1446,26 +1446,25 @@ function renderSettings() {
     <div class="switch-row"><div class="sw-text"><div class="sw-label">修复后删除源文件</div><div class="sw-desc">修复/转码成功后删除原始文件</div></div>
       <label class="switch"><input type="checkbox" id="setRepDel" onchange="saveSettings()"><span class="slider"></span></label></div>
     <h2>账号</h2>
-    <div class="switch-row"><div class="sw-text"><div class="sw-label">小心心</div><div class="sw-desc">观看时长上报(计入粉丝勋章亲密度)。开启后所有在播房间都会上报，<b>主播能在人气/观众中看到你</b>；需登录。</div></div>
+    <div class="switch-row"><div class="sw-text"><div class="sw-label">小心心<span class="sw-badge" id="hbBadge"></span></div><div class="sw-desc">观看时长上报(计入粉丝勋章亲密度)。开启后所有在播房间都会上报，<b>主播能在人气/观众中看到你</b>；需登录。</div></div>
       <label class="switch"><input type="checkbox" id="setHeartGlobal" onchange="saveSettings()"><span class="slider"></span></label></div>
     <h2>弹幕</h2>
-    <div class="switch-row"><div class="sw-text"><div class="sw-label">弹幕总开关</div><div class="sw-desc">关闭后所有房间断开弹幕连接，不再接收/记录弹幕</div></div>
+    <div class="switch-row"><div class="sw-text"><div class="sw-label">弹幕总开关<span class="sw-badge" id="dmBadge"></span></div><div class="sw-desc">关闭后所有房间断开弹幕连接，不再接收/记录弹幕</div></div>
       <label class="switch"><input type="checkbox" id="setDmGlobal" onchange="saveSettings()"><span class="slider"></span></label></div>
     <div class="switch-row"><div class="sw-text"><div class="sw-label">新房间默认连接弹幕</div><div class="sw-desc">默认关闭。开启后新加房间自动连弹幕(登录态下会以你的账号进入该直播间,主播可见)</div></div>
       <label class="switch"><input type="checkbox" id="setDmDefault" onchange="saveSettings()"><span class="slider"></span></label></div>
 
+    <div class="switch-row"><div class="sw-text"><div class="sw-label">弹幕屏蔽词</div><div class="sw-desc">用 | 分隔，如：广告|代购</div></div>
+      <input type="text" id="setBlock" class="sw-input-txt" placeholder="广告|代购" onchange="saveSettings()"></div>
     <h2>通知</h2>
     <div class="switch-row"><div class="sw-text"><div class="sw-label">开播/下播提醒</div><div class="sw-desc">全局开关，房间详情可单独关闭</div></div>
       <label class="switch"><input type="checkbox" id="setRemind" onchange="saveSettings()"><span class="slider"></span></label></div>
-    <h2>弹幕</h2>
-    <div class="switch-row"><div class="sw-text"><div class="sw-label">弹幕屏蔽词</div><div class="sw-desc">用 | 分隔，如：广告|代购</div></div>
-      <input type="text" id="setBlock" class="sw-input-txt" placeholder="广告|代购" onchange="saveSettings()"></div>
     <h2>录制文件</h2>
     <div class="switch-row"><div class="sw-text"><div class="sw-label">文件名格式</div><div class="sw-desc">空=默认;关键字 {ROOMID} {NAME} {TITLE} {DATE} {TIME} {YYYY} {MM} {DD} {HH} {mm} {SS} {FFF}</div></div>
       <input type="text" id="setFmt" class="sw-input-txt" placeholder="{DATE}_{TIME}_{TITLE}" onchange="saveSettings()"></div>
-    <h2>录制目录</h2>
+    <h2>存储</h2>
     <div class="switch-row">
-      <div class="sw-text"><div class="sw-label">录制目录</div><div class="sw-desc">录制的保存位置（绝对路径）</div></div>
+      <div class="sw-text"><div class="sw-label">录制保存位置</div><div class="sw-desc">录制文件的保存目录（绝对路径）</div></div>
       <input type="text" id="setOutputDir" class="sw-input-txt" placeholder="/storage/emulated/0/DDTV/rec" onchange="saveOutputDir()"></div>
     <div class="mono-block" id="outputDirText">${esc(s?s.outputDir:'')}</div>
     <h2>权限</h2>
@@ -1513,8 +1512,10 @@ function renderSettings() {
     $('#setAppend').checked=s.flvAppendOnReconnect!==false;
     $('#setSplitTitle').checked=s.splitByTitle; $('#setSplitH').value=s.splitSeconds?Math.round(s.splitSeconds/3600):0;
     $('#setSplitG').value=s.splitSizeMB?Math.round(s.splitSizeMB/1024):0; $('#setRemux').checked=s.remuxAfterLive; $('#setRepDel').checked=s.repairDeleteSource!==false; $('#setHeartGlobal').checked=s.heartbeatGlobal;
+    updateHeartBadges(s);
     $('#setDmGlobal').checked=s.danmakuGlobal!==false;
     $('#setDmDefault').checked=s.danmakuDefault===true;
+    updateDmBadge(s);
     $('#setRemind').checked=s.remindLive; $('#setBlock').value=s.blockBarrage||''; $('#setFmt').value=s.fileNameFormat||'';
     $('#setAutoUpdate').checked=!!s.autoUpdate;
     $('#setDebug').checked=!!s.debugServer;
@@ -1544,11 +1545,28 @@ function saveSettings() {
   toast(r.msg, r.code<0?'err':'ok');
   if(r.code>0){
     state.settings=s; updateStatusbar();
+    if(state.view==='settings'){ updateHeartBadges(s); updateDmBadge(s); }
     // 设置变更后同步刷新房间详情（弹幕总开关等提示文案依赖设置）
     if(state._detailOpen && state.currentRoom) renderRoomDetail(state.currentRoom);
   }
 }
 
+/** 小心心状态徽标：开启+已登录+有在播房间→"挂机中 N"；开启未登录→"未登录"；关→"已关闭" */
+function updateHeartBadges(s) {
+  const b=$('#hbBadge'); if(!b) return;
+  const logged=!!(state.account&&state.account.logged);
+  const liveRooms=(state.rooms||[]).filter(x=>x.liveStatus===1).length;
+  if(!s.heartbeatGlobal){ b.textContent='已关闭'; b.className='sw-badge'; }
+  else if(!logged){ b.textContent='未登录'; b.className='sw-badge warn'; }
+  else { b.textContent=liveRooms>0?('挂机中 '+liveRooms):'等待开播'; b.className='sw-badge on'; }
+}
+/** 弹幕状态徽标 */
+function updateDmBadge(s) {
+  const b=$('#dmBadge'); if(!b) return;
+  const n=(state.rooms||[]).filter(x=>x.danmakuOpen&&x.liveStatus===1).length;
+  if(s.danmakuGlobal===false){ b.textContent='已关闭'; b.className='sw-badge'; }
+  else { b.textContent=n>0?('连接 '+n):'就绪'; b.className='sw-badge on'; }
+}
 function pickOutputDir() {
   try { AndroidBridge.pickOutputDir(); } catch(e){ toast('无法打开目录选择器: '+e,'err'); }
 }
@@ -2111,14 +2129,22 @@ function syncListenCtl() {
   if (!active) { if (ctl) ctl.remove(); return; }
   if (!ctl) {
     ctl = document.createElement('div'); ctl.className = 'listen-ctl';
-    ctl.onclick = () => togglePause();
     bar.appendChild(ctl);
   }
   const playing = state.listen.playing;
   // 显示服务侧推送的状态标签(缓冲中…/已暂停/播放出错…)，比简单按 playing 布尔显示更准确
   const label = state._listenLabel || (playing ? '播放中' : '已暂停');
-  ctl.innerHTML = `<span class="lc-dot${playing?' on':''}"></span>${label}`;
-  ctl.title = playing ? '点击暂停' : '点击继续';
+  const name = (state.listen && state.listen.name) ? esc(state.listen.name) : '听直播';
+  // 仿 B 站直播间控制条：状态点 + 主播名 + 暂停/继续 + 停止（不用再进房间详情才能停）
+  ctl.innerHTML = `<span class="lc-dot${playing?' on':''}"></span>`+
+    `<span class="lc-name">${name}</span>`+
+    `<button class="lc-btn" data-act="toggle" title="${playing?'暂停':'继续'}">${playing?'⏸':'▶'}</button>`+
+    `<button class="lc-btn lc-stop" data-act="stop" title="停止收听">✕</button>`;
+  ctl.onclick = (e) => {
+    const act = e.target && e.target.dataset && e.target.dataset.act;
+    if (act === 'stop') { e.stopPropagation(); doStopListen(); }
+    else { togglePause(); }
+  };
 }
 let _ctlBusyUntil = 0;
 function togglePause() {
@@ -2137,6 +2163,12 @@ function togglePause() {
     }
     AndroidBridge.toggleListenPlay();
   } catch(e){ _ctlBusyUntil = 0; if (ctl) ctl.classList.remove('busy'); }
+}
+function doStopListen() {
+  try { AndroidBridge.stopListen(); } catch(e){}
+  state.listen = {active:false,playing:false,roomId:0,name:''}; state._listenLabel='';
+  syncListenCtl();
+  if (state._detailOpen && state.currentRoom) updateRoomDetail(state.currentRoom);
 }
 function setDanmaku(rid,on) {
   let res; try { res = JSON.parse(AndroidBridge.setDanmakuOpen(rid,on)); }

@@ -213,12 +213,19 @@ svg{display:block;flex:0 0 auto}
 .tabs{flex:0 0 auto;height:36px;display:flex;background:var(--bg-tab);
   overflow-x:auto;scrollbar-width:none}
 .tabs::-webkit-scrollbar{display:none}
-/* tabs 栏播放小控制器：极简，右浮，仅显示播放状态，点击切换 */
-.listen-ctl{display:inline-flex;align-items:center;gap:5px;margin-left:auto;padding:0 12px;height:36px;
-  font-size:11px;color:var(--fg);cursor:pointer;user-select:none;flex:0 0 auto;white-space:nowrap}
-.listen-ctl:hover{background:var(--bg-hover);color:var(--fg-bright)}
+/* tabs 栏听直播控制条：仿 B 站直播间（状态点 + 主播名 + 暂停/继续 + 停止） */
+.listen-ctl{display:inline-flex;align-items:center;gap:7px;margin-left:auto;padding:0 6px 0 11px;height:30px;
+  border-radius:var(--r-pill);background:var(--accent-soft);color:var(--fg-bright);
+  user-select:none;flex:0 0 auto;white-space:nowrap;max-width:58vw;overflow:hidden}
 .lc-dot{width:7px;height:7px;border-radius:50%;background:var(--fg-dim);flex:0 0 auto}
-.lc-dot.on{background:var(--accent);box-shadow:0 0 0 3px rgba(251,114,153,.22)}
+.lc-dot.on{background:var(--accent);box-shadow:0 0 0 3px rgba(251,114,153,.22);animation:lcPulse 1.8s ease-in-out infinite}
+@keyframes lcPulse{0%,100%{box-shadow:0 0 0 3px rgba(251,114,153,.22)}50%{box-shadow:0 0 0 5px rgba(251,114,153,.12)}}
+.lc-name{font-size:12px;font-weight:600;overflow:hidden;text-overflow:ellipsis;max-width:30vw;min-width:0}
+.lc-btn{width:23px;height:23px;border-radius:50%;border:none;background:rgba(255,255,255,.12);
+  color:var(--fg-bright);font-size:12px;line-height:1;cursor:pointer;display:inline-flex;align-items:center;justify-content:center;
+  flex:0 0 auto;padding:0;transition:background var(--dur-fast) var(--ease)}
+.lc-btn:hover{background:rgba(255,255,255,.22)}
+.lc-btn.lc-stop:hover{background:var(--error);color:#fff}
 .tab{display:flex;align-items:center;gap:6px;padding:0 16px;height:36px;font-size:var(--fs-sm);
   color:var(--fg-dim);white-space:nowrap;flex:0 0 auto;position:relative;
   transition:color var(--dur-fast) var(--ease)}
@@ -300,8 +307,14 @@ svg{display:block;flex:0 0 auto}
 .switch-row:last-child{border-bottom:none}
 .switch-row .sw-text{flex:1 1 auto;min-width:0}
 .switch-row .sw-label{font-size:var(--fs-md);color:var(--fg-bright);font-weight:500}
-.switch-row .sw-desc{font-size:var(--fs-xs);color:var(--fg-dim);margin-top:3px;line-height:1.6;
+.switch-row .sw-desc{font-size:var(--fs-xs);color:var(--fg-dim);margin-top:5px;line-height:1.75;
   white-space:normal;word-break:break-all;overflow-wrap:anywhere}
+.switch-row .sw-label{display:flex;align-items:center;gap:8px}
+/* 设置项状态徽标：跟随开关给出"生效中/已关闭"等即时反馈 */
+.sw-badge{font-size:10px;font-weight:600;padding:1px 7px;border-radius:var(--r-pill);letter-spacing:.02em;
+  background:var(--pill-bg);color:var(--fg-dim);flex:0 0 auto}
+.sw-badge.on{background:var(--accent-soft);color:var(--accent-ink)}
+.sw-badge.warn{background:rgba(217,179,101,.18);color:var(--warn)}
 .switch-row .sw-right{display:flex;align-items:center;gap:8px;flex:0 0 auto}
 .switch{position:relative;width:38px;height:21px;flex:0 0 auto;display:inline-block;cursor:pointer}
 .switch input{opacity:0;width:0;height:0}
@@ -401,7 +414,7 @@ input::placeholder{color:var(--fg-dim);opacity:.9}
 #app[data-view="settings"] .view{max-width:660px}
 .view h1{font-size:var(--fs-xl);font-weight:600;color:var(--fg-bright);margin:0 0 4px;letter-spacing:-.01em}
 .view .lead{color:var(--fg-dim);font-size:var(--fs-sm);margin:0 0 18px;line-height:1.7}
-.view h2{font-size:var(--fs-xs);font-weight:600;color:var(--fg-title);margin:28px 0 6px;
+.view h2{font-size:var(--fs-xs);font-weight:700;color:var(--fg-title);margin:26px 0 8px;letter-spacing:.08em;text-transform:uppercase;
   letter-spacing:.09em;text-transform:uppercase}
 .view h2:first-child{margin-top:4px}
 .detail-empty{display:flex;flex-direction:column;align-items:center;justify-content:center;height:100%;

@@ -68,24 +68,57 @@ object ListenNotify {
         }
     }
 
+    // 当前房间的封面 Bitmap 缓存（避免每次状态刷新都 decodeFile）
+    @Volatile private var coverBmp: Bitmap? = null
+    @Volatile private var coverRoomId = 0L
+    @Volatile private var coverUrl = ""
+
     /** 显示/更新通知。playing=true 显示暂停按钮 */
     fun show(roomId: Long, playing: Boolean, status: String) {
         val ctx = appCtx ?: return
         val card = RoomManager.getRoom(roomId)
-        // 封面同步取自磁盘缓存（避免"先无图再刷新"的闪烁）；缓存缺失时异步下载后补一次
-        val coverFile = java.io.File(ctx.cacheDir, "listen_cover_$roomId.jpg")
-        val cover: Bitmap? = if (coverFile.exists() && coverFile.length() > 0)
-            try { BitmapFactory.decodeFile(coverFile.absolutePath) } catch (_: Exception) { null } else null
+        val url = card?.let { it.cover.ifEmpty { it.face } } ?: ""
+        // 房间/封面变化时重置 Bitmap 缓存
+        if (roomId != coverRoomId || url != coverUrl) {
+            coverRoomId = roomId; coverUrl = url
+            coverBmp = null
+        }
+        // 命中内存缓存直接用；否则查磁盘封面缓存（CoverCache 统一缓存，带并发去重/负缓存）
+        var cover = coverBmp
+        if (cover == null && url.isNotEmpty()) {
+            CoverCache.cachedFile(url)?.let { f ->
+                cover = try { BitmapFactory.decodeFile(f.absolutePath) } catch (_: Exception) { null }
+                coverBmp = cover
+            }
+        }
         render(ctx, roomId, card, playing, status, cover)
-        if (cover == null && card != null) fetchCoverAsync(ctx, roomId, card, playing, status)
+        // 封面未就绪：交给 CoverCache 异步下载（内部已并发去重），完成后补一次渲染
+        if (cover == null && url.isNotEmpty()) {
+            val rId = roomId
+            CoverCache.cacheAsync(url) {
+                if (ListenPlayer.activeRoom() != rId) return@cacheAsync
+                CoverCache.cachedFile(url)?.let { f ->
+                    val bmp = try { BitmapFactory.decodeFile(f.absolutePath) } catch (_: Exception) { null } ?: return@cacheAsync
+                    coverBmp = bmp
+                    render(ctx, rId, RoomManager.getRoom(rId), ListenPlayer.isPlaying(), status, bmp)
+                }
+            }
+        }
     }
 
     private fun render(ctx: Context, roomId: Long, card: RoomCard?, playing: Boolean, status: String, cover: Bitmap?) {
-        val sig = "$roomId|$playing|$status|${cover != null}"
+        // 瞬时状态（缓冲中…/重连…）不参与通知签名，避免每次 buffering 都重建通知
+        val norm = when {
+            status.contains("暂停") -> "已暂停"
+            status.contains("出错") || status.contains("失败") -> "播放异常"
+            playing -> "正在收听"
+            else -> "已暂停"
+        }
+        val sig = "$roomId|$norm|${cover != null}"
         if (sig == lastSig) return
         val anchor = card?.name?.ifEmpty { "直播间 $roomId" } ?: "直播间 $roomId"
         val title = card?.title?.ifEmpty { "正在收听" } ?: "正在收听"
-        val desc = if (playing) title else "$status · $title"
+        val desc = if (playing) title else "$norm · $title"
 
         val openPi = PendingIntent.getActivity(ctx, 7001, Intent(ctx, MainActivity::class.java).apply {
             flags = Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_CLEAR_TOP
@@ -95,6 +128,7 @@ object ListenNotify {
         val stopPi = PendingIntent.getBroadcast(ctx, 7003, Intent(ACTION_STOP).setPackage(ctx.packageName),
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
 
+        val sub = card?.areaName?.takeIf { it.isNotEmpty() } ?: norm
         val b = NotificationCompat.Builder(ctx, CHANNEL)
             .setSmallIcon(com.ddtv.app.R.drawable.ic_stat_ddtv)
             .setContentIntent(openPi)
@@ -103,6 +137,7 @@ object ListenNotify {
             .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
             .setContentTitle(anchor)
             .setContentText(desc)
+            .setSubText(sub)
             .addAction(if (playing) android.R.drawable.ic_media_pause else android.R.drawable.ic_media_play,
                 if (playing) "暂停" else "播放", togglePi)
             .addAction(android.R.drawable.ic_menu_close_clear_cancel, "停止", stopPi)
@@ -110,10 +145,8 @@ object ListenNotify {
         if (cover != null) {
             b.setLargeIcon(cover)
             b.setStyle(NotificationCompat.BigPictureStyle().bigPicture(cover).setSummaryText(desc))
-            card?.areaName?.takeIf { it.isNotEmpty() }?.let { b.setSubText(it) }
         } else {
             b.setStyle(NotificationCompat.BigTextStyle().bigText(desc))
-            card?.areaName?.takeIf { it.isNotEmpty() }?.let { b.setSubText(it) } ?: b.setSubText(status)
         }
         try {
             ctx.getSystemService(NotificationManager::class.java).notify(NOTIFY_ID, b.build())
@@ -123,25 +156,10 @@ object ListenNotify {
         }
     }
 
-    private fun fetchCoverAsync(ctx: Context, roomId: Long, card: RoomCard, playing: Boolean, status: String) {
-        val url = card.cover.ifEmpty { card.face }
-        if (url.isEmpty()) return
-        val f = java.io.File(ctx.cacheDir, "listen_cover_$roomId.jpg")
-        Thread({
-            try {
-                val bytes = Http.getBytes(url, referer = "https://live.bilibili.com/")
-                if (bytes.isEmpty()) return@Thread
-                f.writeBytes(bytes)
-                if (ListenPlayer.activeRoom() != roomId) return@Thread  // 已切房/停止，丢弃
-                val bmp = BitmapFactory.decodeFile(f.absolutePath) ?: return@Thread
-                render(ctx, roomId, RoomManager.getRoom(roomId), ListenPlayer.isPlaying(), status, bmp)
-            } catch (_: Exception) {}
-        }, "ListenCover").apply { isDaemon = true; start() }
-    }
-
     fun cancel() {
         val ctx = appCtx ?: return
         lastSig = null
+        coverBmp = null; coverRoomId = 0L; coverUrl = ""
         try { ctx.getSystemService(NotificationManager::class.java).cancel(NOTIFY_ID) } catch (_: Exception) {}
     }
 }

@@ -541,7 +541,7 @@ object RoomManager {
             card.liveStatusPrev = true
             if (card.autoRecord) ensureRecording(card)
             ensureDanmaku(card)
-            // 小心心 live 档：开播即上报（挂机）；listen 档由 ListenPlayer 在播放时注册
+            // 小心心：开播即上报（挂机，无需正在听）；总开关关闭时不注册
             if (heartbeatAllowed()) WatchHeartbeat.register(card.roomId, card.uid)
         } else if (!isLive && wasLive) {
             // 下播（日志经 notifyLog 打一条"直播结束";不再单独 Logger.i 避免前端/DebugServer 双打）
@@ -1084,7 +1084,7 @@ object RoomManager {
             .putString("sub_font", settings.subFont)
             .apply()
         LiveRecorder.applySettings(settings)
-        // 小心心即时生效：总闸关闭 → 停所有会话；总闸开启 → 为 live 档且在播的房间补注册
+        // 小心心即时生效：总闸关闭 → 停所有会话；总闸开启 → 为所有在播房间补注册
         if (!settings.heartbeatGlobal) {
             WatchHeartbeat.stopAll()
         } else {

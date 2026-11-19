@@ -75,7 +75,7 @@ object WatchHeartbeat {
         val anchorUid = session.anchorUid
         var failures = 0
         try {
-            // 已被注销（register 后立刻 unregister / 档位切换）：不要再发任何请求，
+            // 已被注销（register 后立刻 unregister / 关闭总闸）：不要再发任何请求，
             // 否则会向 B站发出一份"进入房间"的 E 上报，违背用户的关闭意图。
             if (session.stopFlag.get()) return
             // 未登录直接退出
