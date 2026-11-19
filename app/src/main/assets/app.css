@@ -223,7 +223,6 @@ svg{display:block;flex:0 0 auto}
   color:var(--fg-dim);cursor:pointer;display:inline-flex;align-items:center;justify-content:center;
   flex:0 0 auto;padding:0}
 .lc-btn:hover{background:var(--bg-hover);color:var(--fg-bright)}
-.lc-btn.lc-stop:hover{color:var(--error)}
 .tab{display:flex;align-items:center;gap:6px;padding:0 16px;height:36px;font-size:var(--fs-sm);
   color:var(--fg-dim);white-space:nowrap;flex:0 0 auto;position:relative;
   transition:color var(--dur-fast) var(--ease)}

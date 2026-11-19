@@ -2136,16 +2136,11 @@ function syncListenCtl() {
   // 显示服务侧推送的状态标签(缓冲中…/已暂停/播放出错…)，比简单按 playing 布尔显示更准确
   const label = state._listenLabel || (playing ? '播放中' : '已暂停');
   const name = (state.listen && state.listen.name) ? esc(state.listen.name) : '听直播';
-  // 仿 B 站直播间控制条：状态点 + 主播名 + 暂停/继续 + 停止（不用再进房间详情才能停）
+  // 听直播控制条：状态点 + 主播名 + 播放/暂停（停止请进房间详情）
   ctl.innerHTML = `<span class="lc-dot${playing?' on':''}"></span>`+
     `<span class="lc-name">${name}</span>`+
-    `<button class="lc-btn" data-act="toggle" title="${playing?'暂停':'继续'}">${ic(playing?'pause':'play',13)}</button>`+
-    `<button class="lc-btn lc-stop" data-act="stop" title="停止收听">${ic('close',12)}</button>`;
-  ctl.onclick = (e) => {
-    const act = e.target && e.target.dataset && e.target.dataset.act;
-    if (act === 'stop') { e.stopPropagation(); doStopListen(); }
-    else { togglePause(); }
-  };
+    `<button class="lc-btn" data-act="toggle" title="${playing?'暂停':'继续'}">${ic(playing?'pause':'play',13)}</button>`;
+  ctl.onclick = () => togglePause();
 }
 let _ctlBusyUntil = 0;
 function togglePause() {
@@ -2164,12 +2159,6 @@ function togglePause() {
     }
     AndroidBridge.toggleListenPlay();
   } catch(e){ _ctlBusyUntil = 0; if (ctl) ctl.classList.remove('busy'); }
-}
-function doStopListen() {
-  try { AndroidBridge.stopListen(); } catch(e){}
-  state.listen = {active:false,playing:false,roomId:0,name:''}; state._listenLabel='';
-  syncListenCtl();
-  if (state._detailOpen && state.currentRoom) updateRoomDetail(state.currentRoom);
 }
 function setDanmaku(rid,on) {
   let res; try { res = JSON.parse(AndroidBridge.setDanmakuOpen(rid,on)); }
