@@ -161,7 +161,7 @@ class MainActivity : AppCompatActivity() {
 
         // 打开 App = 用户未退出：清除退出标记并确保保活任务在位，然后启动前台服务
         com.ddtv.app.core.KeepAlive.markExited(this, false)
-        com.ddtv.app.core.KeepAlive.schedule(this)
+        if (RoomManager.settings.keepAliveJob) com.ddtv.app.core.KeepAlive.schedule(this) else com.ddtv.app.core.KeepAlive.cancel(this)
         startService(Intent(this, LiveService::class.java))
 
         // 补提取：audioOnly 房间残留的未提取音频（进程被杀等场景），后台静默执行

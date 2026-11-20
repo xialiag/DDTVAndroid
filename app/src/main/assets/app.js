@@ -1482,8 +1482,8 @@ function renderSettings() {
       <label class="switch"><input type="checkbox" id="setKeepScreen" onchange="saveSettings()"><span class="slider"></span></label></div>
     <div class="switch-row"><div class="sw-text"><div class="sw-label">后台保活设置</div><div class="sw-desc">系统应用信息页允许自启动/后台运行,详见「常见问题」</div></div>
       <div class="sw-right"><button class="btn btn-sec btn-sm" onclick="openAppBackgroundSettings()">去设置</button></div></div>
-    <div class="switch-row"><div class="sw-text"><div class="sw-label">进程保活兜底</div><div class="sw-desc">开启后每 15 分钟检查一次，服务被系统杀掉会自动拉起（已内置；下方"退出应用"会关闭它）</div></div>
-      <div class="sw-right"><span class="perm-state on">已内置</span></div></div>
+    <div class="switch-row"><div class="sw-text"><div class="sw-label">进程保活兜底</div><div class="sw-desc">服务被系统强杀后自动拉起（系统限制最短检查周期 15 分钟；正常回收/划掉任务仍会立即恢复）。关闭可减少后台唤醒</div></div>
+      <label class="switch"><input type="checkbox" id="setKeepAlive" onchange="saveSettings()"><span class="slider"></span></label></div>
     <h2>调试</h2>
     <div class="switch-row"><div class="sw-text"><div class="sw-label">调试服务器</div><div class="sw-desc">局域网可查看运行状态与日志，默认关闭</div></div>
       <label class="switch"><input type="checkbox" id="setDebug" onchange="toggleDebugServer()"><span class="slider"></span></label></div>
@@ -1520,6 +1520,7 @@ function renderSettings() {
     $('#setAutoUpdate').checked=!!s.autoUpdate;
     $('#setDebug').checked=!!s.debugServer;
     $('#setKeepScreen').checked=!!s.keepScreenOn;
+    $('#setKeepAlive').checked=s.keepAliveJob!==false;
     $('#setAutoStart').checked=!!s.autoStart;
     $('#setDanmakuSrt').checked=!!s.danmakuSrt;
     $('#setOutputDir').value=s.outputDir||''; }
@@ -1536,7 +1537,7 @@ function saveSettings() {
     blockBarrage:$('#setBlock').value.trim(),fileNameFormat:$('#setFmt').value.trim(),
     autoUpdate:$('#setAutoUpdate').checked,
     debugServer:$('#setDebug').checked,
-    keepScreenOn:$('#setKeepScreen').checked,
+    keepScreenOn:$('#setKeepScreen').checked,keepAliveJob:$('#setKeepAlive').checked,
     autoStart:$('#setAutoStart').checked,
     danmakuSrt:$('#setDanmakuSrt').checked,
     danmakuSubFormat:$('#setSubFormat').dataset.value||'srt'};

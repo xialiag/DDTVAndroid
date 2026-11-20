@@ -98,6 +98,8 @@ object RoomManager {
         loadHistories()
         LiveRecorder.outputRoot = outputDir
         LiveRecorder.applySettings(settings)
+        // 保活兜底开关即时生效：关→取消 Job；开→重新注册
+        appContext?.let { if (settings.keepAliveJob) KeepAlive.schedule(it) else KeepAlive.cancel(it) }
     }
 
     /**
@@ -1031,6 +1033,7 @@ object RoomManager {
             repairDeleteSource = prefs.getBoolean("repair_delete_source", true),
             debugServer = prefs.getBoolean("debug_server", false),
             keepScreenOn = prefs.getBoolean("keep_screen_on", false),
+            keepAliveJob = prefs.getBoolean("keep_alive_job", true),
             updateRepo = prefs.getString("update_repo", "xialiag/DDTVAndroid")?.takeIf { it.isNotBlank() } ?: "xialiag/DDTVAndroid",
             autoUpdate = prefs.getBoolean("auto_update", true),
             autoStart = prefs.getBoolean("auto_start", true),
@@ -1066,6 +1069,7 @@ object RoomManager {
             .putBoolean("repair_delete_source", settings.repairDeleteSource)
             .putBoolean("debug_server", settings.debugServer)
             .putBoolean("keep_screen_on", settings.keepScreenOn)
+            .putBoolean("keep_alive_job", settings.keepAliveJob)
             .putString("update_repo", settings.updateRepo)
             .putBoolean("auto_update", settings.autoUpdate)
             .putBoolean("auto_start", settings.autoStart)
