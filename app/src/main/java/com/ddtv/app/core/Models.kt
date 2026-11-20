@@ -23,7 +23,6 @@ data class AppSettings(
     // ---- 小心心（观看时长上报）----
     var heartbeatGlobal: Boolean = false,   // 小心心总开关：开=所有在播房间上报观看时长
     // ---- 弹幕 ----
-    var danmakuGlobal: Boolean = true,       // 弹幕总开关：关=全部断开不再连
     var danmakuDefault: Boolean = false,     // 新房间默认是否连接（默认关，避免默认暴露身份）
     var saveCover: Boolean = true,       // 保存封面(每段录制存 cover.jpg)
     var remindLive: Boolean = true,      // 开播/下播系统通知提醒
@@ -57,7 +56,6 @@ data class AppSettings(
         put("minFileSizeMB", minFileSizeMB)
         put("remuxAfterLive", remuxAfterLive)
         put("heartbeatGlobal", heartbeatGlobal)
-        put("danmakuGlobal", danmakuGlobal)
         put("danmakuDefault", danmakuDefault)
         put("saveCover", saveCover)
         put("remindLive", remindLive)

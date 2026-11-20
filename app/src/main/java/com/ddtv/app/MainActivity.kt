@@ -305,6 +305,8 @@ class MainActivity : AppCompatActivity() {
 
     override fun onResume() {
         super.onResume()
+        // 重新应用屏幕常亮：部分 ROM 在切后台/回前台后可能丢失窗口 flag
+        bridge.reapplyKeepScreenOn()
         if (!permissionRequested) {
             permissionRequested = true
             // onCreate 里 Activity 尚未 resume 时 requestPermissions 会被部分 ROM 静默丢弃，

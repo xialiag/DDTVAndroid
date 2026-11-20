@@ -685,8 +685,7 @@ function renderRoomDetail(rid, container) {
     <h2>房间设置</h2>
     <div class="switch-row"><div class="sw-text"><div class="sw-label">开播自动录制</div><div class="sw-desc">检测到开播后自动开始录制</div></div>
       <label class="switch"><input type="checkbox" ${r.autoRecord?'checked':''} onchange="setAutoRecord(${r.roomId},this.checked)"><span class="slider"></span></label></div>
-    <div class="switch-row"><div class="sw-text"><div class="sw-label">连接弹幕</div><div class="sw-desc">接收弹幕消息与记录弹幕文件。<b>登录状态下会以你的账号进入该直播间，主播可见</b>。关闭后录制/听直播不受影响，仅不记录弹幕。${
-      (state.settings&&state.settings.danmakuGlobal===false)?'<br><b style="color:var(--warn)">弹幕总开关已关闭，此处开启也不会连接</b>':''}</div></div>
+    <div class="switch-row"><div class="sw-text"><div class="sw-label">连接弹幕</div><div class="sw-desc">接收弹幕消息与记录弹幕文件。<b>登录状态下会以你的账号进入该直播间，主播可见</b>。关闭后录制/听直播不受影响，仅不记录弹幕。</div></div>
       <label class="switch"><input type="checkbox" ${r.danmakuOpen?'checked':''} onchange="setDanmaku(${r.roomId},this.checked)"><span class="slider"></span></label></div>
     <div class="switch-row"><div class="sw-text"><div class="sw-label">仅录音频</div><div class="sw-desc">${r.voiceRoom ? '电台/聊天室分区，默认开启（可关闭）' : '只拉取音频流录制，省流量（下次录制生效）'}</div></div>
       <label class="switch"><input type="checkbox" ${r.audioOnly?'checked':''} onchange="setAudioOnlyRoom(${r.roomId},this.checked)"><span class="slider"></span></label></div>
@@ -860,10 +859,10 @@ function renderFollowUsers() {
       </div>`).join('')}</div>` : '';
   list.innerHTML = liveRow + state.followUsers.map(u=>`
       <div class="follow-item">
-        <input type="checkbox" class="checkbox" data-mid="${u.mid}">
         <div class="fi-avatar">${avatarHtml(u.face, u.uname)}</div>
         <div class="fi-body"><div class="fi-name">${esc(u.uname)}</div>
-        <div class="fi-status">${u.liveStatus===1?'● 直播中':'未开播'}</div></div></div>`).join('') ||
+        <div class="fi-status">${u.liveStatus===1?'● 直播中':'未开播'}</div></div>
+        <input type="checkbox" class="checkbox" data-mid="${u.mid}"></div>`).join('') ||
     '<div class="sb-empty">该分组暂无关注用户</div>';
   // 横滑卡与列表勾选同步（初始都不选中，点「选在播」或手动勾选后才高亮）
   list.querySelectorAll('.live-up-card').forEach(c => {
@@ -1450,8 +1449,6 @@ function renderSettings() {
     <div class="switch-row"><div class="sw-text"><div class="sw-label">小心心<span class="sw-badge" id="hbBadge"></span></div><div class="sw-desc">观看时长上报(计入粉丝勋章亲密度)。开启后所有在播房间都会上报，<b>主播能在人气/观众中看到你</b>；需登录。</div></div>
       <label class="switch"><input type="checkbox" id="setHeartGlobal" onchange="saveSettings()"><span class="slider"></span></label></div>
     <h2>弹幕</h2>
-    <div class="switch-row"><div class="sw-text"><div class="sw-label">弹幕总开关<span class="sw-badge" id="dmBadge"></span></div><div class="sw-desc">关闭后所有房间断开弹幕连接，不再接收/记录弹幕</div></div>
-      <label class="switch"><input type="checkbox" id="setDmGlobal" onchange="saveSettings()"><span class="slider"></span></label></div>
     <div class="switch-row"><div class="sw-text"><div class="sw-label">新房间默认连接弹幕</div><div class="sw-desc">默认关闭。开启后新加房间自动连弹幕(登录态下会以你的账号进入该直播间,主播可见)</div></div>
       <label class="switch"><input type="checkbox" id="setDmDefault" onchange="saveSettings()"><span class="slider"></span></label></div>
 
@@ -1485,7 +1482,8 @@ function renderSettings() {
       <label class="switch"><input type="checkbox" id="setKeepScreen" onchange="saveSettings()"><span class="slider"></span></label></div>
     <div class="switch-row"><div class="sw-text"><div class="sw-label">后台保活设置</div><div class="sw-desc">系统应用信息页允许自启动/后台运行,详见「常见问题」</div></div>
       <div class="sw-right"><button class="btn btn-sec btn-sm" onclick="openAppBackgroundSettings()">去设置</button></div></div>
-    <div class="switch-row"><div class="sw-text"><div class="sw-label">后台任务锁定</div><div class="sw-desc">在最近任务中锁定本应用，防止系统清理后台时终止录制</div></div></div>
+    <div class="switch-row"><div class="sw-text"><div class="sw-label">后台任务锁定</div><div class="sw-desc">在最近任务中锁定本应用，防止系统清理后台时终止录制（部分系统才有"锁定"）</div></div>
+      <div class="sw-right"><button class="btn btn-sec btn-sm" onclick="openRecents()">去最近任务</button></div></div>
     <h2>调试</h2>
     <div class="switch-row"><div class="sw-text"><div class="sw-label">调试服务器</div><div class="sw-desc">局域网可查看运行状态与日志，默认关闭</div></div>
       <label class="switch"><input type="checkbox" id="setDebug" onchange="toggleDebugServer()"><span class="slider"></span></label></div>
@@ -1514,9 +1512,7 @@ function renderSettings() {
     $('#setSplitTitle').checked=s.splitByTitle; $('#setSplitH').value=s.splitSeconds?Math.round(s.splitSeconds/3600):0;
     $('#setSplitG').value=s.splitSizeMB?Math.round(s.splitSizeMB/1024):0; $('#setRemux').checked=s.remuxAfterLive; $('#setRepDel').checked=s.repairDeleteSource!==false; $('#setHeartGlobal').checked=s.heartbeatGlobal;
     updateHeartBadges(s);
-    $('#setDmGlobal').checked=s.danmakuGlobal!==false;
     $('#setDmDefault').checked=s.danmakuDefault===true;
-    updateDmBadge(s);
     $('#setRemind').checked=s.remindLive; $('#setBlock').value=s.blockBarrage||''; $('#setFmt').value=s.fileNameFormat||'';
     $('#setAutoUpdate').checked=!!s.autoUpdate;
     $('#setDebug').checked=!!s.debugServer;
@@ -1532,7 +1528,6 @@ function saveSettings() {
     splitByTitle:$('#setSplitTitle').checked,splitSeconds:Number($('#setSplitH').value)*3600,splitSizeMB:Number($('#setSplitG').value)*1024,
     remuxAfterLive:$('#setRemux').checked,remindLive:$('#setRemind').checked,
     heartbeatGlobal:$('#setHeartGlobal').checked,
-    danmakuGlobal:$('#setDmGlobal').checked,
     danmakuDefault:$('#setDmDefault').checked,
     repairDeleteSource:$('#setRepDel').checked,flvAppendOnReconnect:$('#setAppend').checked,
     blockBarrage:$('#setBlock').value.trim(),fileNameFormat:$('#setFmt').value.trim(),
@@ -1546,7 +1541,7 @@ function saveSettings() {
   toast(r.msg, r.code<0?'err':'ok');
   if(r.code>0){
     state.settings=s; updateStatusbar();
-    if(state.view==='settings'){ updateHeartBadges(s); updateDmBadge(s); }
+    if(state.view==='settings'){ updateHeartBadges(s); }
     // 设置变更后同步刷新房间详情（弹幕总开关等提示文案依赖设置）
     if(state._detailOpen && state.currentRoom) renderRoomDetail(state.currentRoom);
   }
@@ -1561,17 +1556,14 @@ function updateHeartBadges(s) {
   else if(!logged){ b.textContent='未登录'; b.className='sw-badge warn'; }
   else { b.textContent=liveRooms>0?('挂机中 '+liveRooms):'等待开播'; b.className='sw-badge on'; }
 }
-/** 弹幕状态徽标 */
-function updateDmBadge(s) {
-  const b=$('#dmBadge'); if(!b) return;
-  const n=(state.rooms||[]).filter(x=>x.danmakuOpen&&x.liveStatus===1).length;
-  if(s.danmakuGlobal===false){ b.textContent='已关闭'; b.className='sw-badge'; }
-  else { b.textContent=n>0?('连接 '+n):'就绪'; b.className='sw-badge on'; }
-}
 function pickOutputDir() {
   try { AndroidBridge.pickOutputDir(); } catch(e){ toast('无法打开目录选择器: '+e,'err'); }
 }
 
+function openRecents() {
+  try { const r=JSON.parse(AndroidBridge.openRecents()); toast(r.msg, r.code<0?'err':'ok'); }
+  catch(e){ toast('无法打开：'+e,'err'); }
+}
 function openAppBackgroundSettings() {
   try { const r = JSON.parse(AndroidBridge.openAppBackgroundSettings()); toast(r.msg, r.code<0?'err':'ok'); }
   catch(e) { toast('无法打开：'+e,'err'); }
@@ -2165,7 +2157,7 @@ function setDanmaku(rid,on) {
   catch(e){ toast('操作失败: '+e,'err'); if(state._detailOpen) renderRoomDetail(rid); return; }
   if(res && res.code<0){ toast(res.msg||'操作失败','err'); if(state._detailOpen) renderRoomDetail(rid); return; }
   const r=state.rooms.find(x=>x.roomId===rid); if(r) r.danmakuOpen=on;
-  if(res && res.msg) toast(res.msg, (on && !state.settings.danmakuGlobal)?'err':'ok');
+  if(res && res.msg) toast(res.msg, 'ok');
 }
 function setAudioOnlyRoom(rid,on) {
   const r = (state.rooms||[]).find(x=>x.roomId===rid);

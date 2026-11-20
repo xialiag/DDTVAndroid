@@ -232,7 +232,7 @@ object DebugServer {
         // 设置
         val s = RoomManager.settings
         sb.append(",\"settings\":{\"pollInterval\":${s.pollInterval},\"autoRecordDefault\":${s.autoRecordDefault},")
-            .append("\"remuxAfterLive\":${s.remuxAfterLive},\"heartbeatGlobal\":${s.heartbeatGlobal},\"danmakuGlobal\":${s.danmakuGlobal},")
+            .append("\"remuxAfterLive\":${s.remuxAfterLive},\"heartbeatGlobal\":${s.heartbeatGlobal},")
             .append("\"outputDir\":\"${esc(RoomManager.outputDir.path)}\"}")
         sb.append('}')
         return sb.toString()

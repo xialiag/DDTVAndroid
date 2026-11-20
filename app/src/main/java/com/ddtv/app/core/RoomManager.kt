@@ -508,9 +508,7 @@ object RoomManager {
             }
             // 安全网（弹幕）：开播边沿若因并发上限被跳过，名额释放后不会有第二次机会
             // （liveStatusPrev 已置 true，不会再进开播分支），故每轮补连。
-            // 前置 danmakuGlobal 短路：否则全局关闭时每轮都会进 ensureDanmaku 并打一条
-            // "跳过连弹幕"日志（每房间每 15s 一条噪声）。
-            if (card.liveStatus == 1 && settings.danmakuGlobal && card.danmakuOpen
+            if (card.liveStatus == 1 && card.danmakuOpen
                 && !danmakuClients.containsKey(card.roomId)
                 && !inDanmakuCooldown(card.roomId)) {
                 ensureDanmaku(card)
@@ -744,7 +742,7 @@ object RoomManager {
     fun heartbeatAllowed(): Boolean = settings.heartbeatGlobal
 
     /** 弹幕是否允许连接：全局总开关 + 房间开关 */
-    fun danmakuAllowed(card: RoomCard): Boolean = settings.danmakuGlobal && card.danmakuOpen
+    fun danmakuAllowed(card: RoomCard): Boolean = card.danmakuOpen
 
     private fun inDanmakuCooldown(roomId: Long): Boolean {
         val t = danmakuCooldown[roomId] ?: return false
@@ -1025,7 +1023,6 @@ object RoomManager {
             // 迁移：旧版单一开关 watch_heartbeat / heartbeat_global 都映射到新总开关，老用户不丢设置
             heartbeatGlobal = prefs.getBoolean("heartbeat_global",
                 prefs.getBoolean("watch_heartbeat", false)),
-            danmakuGlobal = prefs.getBoolean("danmaku_global", true),
             danmakuDefault = prefs.getBoolean("danmaku_default", false),
             saveCover = prefs.getBoolean("save_cover", true),
             remindLive = prefs.getBoolean("remind_live", true),
@@ -1061,7 +1058,6 @@ object RoomManager {
             .putLong("min_file_size_mb", settings.minFileSizeMB)
             .putBoolean("remux_after_live", settings.remuxAfterLive)
             .putBoolean("heartbeat_global", settings.heartbeatGlobal)
-            .putBoolean("danmaku_global", settings.danmakuGlobal)
             .putBoolean("danmaku_default", settings.danmakuDefault)
             .putBoolean("save_cover", settings.saveCover)
             .putBoolean("remind_live", settings.remindLive)
@@ -1093,9 +1089,7 @@ object RoomManager {
                 if (c.liveStatus == 1) WatchHeartbeat.register(c.roomId, c.uid)
             }
         }
-        // 弹幕总闸关闭 → 全部断开；默认值变化不影响已加房间（只影响新建房间）
-        if (!settings.danmakuGlobal) stopAllDanmaku()
-        else rooms.values.forEach { c -> if (c.liveStatus == 1) ensureDanmaku(c) }
+        // 弹幕默认值变化不影响已加房间（只影响新建房间）
     }
 
     fun saveRooms() {

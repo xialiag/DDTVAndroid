@@ -105,6 +105,8 @@ class DDTVBridge(private val context: Context, private val webView: WebView) {
 
     // ============ 屏幕常亮(设置项) ============
 
+    fun reapplyKeepScreenOn() = applyScreenOn(RoomManager.settings.keepScreenOn)
+
     private fun applyScreenOn(on: Boolean) {
         try {
             mainHandler.post {
@@ -230,9 +232,7 @@ class DDTVBridge(private val context: Context, private val webView: WebView) {
             if (on && card.liveStatus == 1) RoomManager.ensureDanmaku(card)
             if (!on) RoomManager.stopDanmaku(roomId)
         }
-        // 全局总闸关闭时房间开关改了也不会连 —— 明确告知，否则用户以为坏了
-        val msg = if (on && !RoomManager.settings.danmakuGlobal) "已开启，但弹幕总开关关闭，实际不会连接"
-                  else if (on) "已开启连接弹幕" else "已关闭连接弹幕"
+        val msg = if (on) "已开启连接弹幕" else "已关闭连接弹幕"
         return JSONObject().put("code", 0).put("msg", msg).toString()
     }
 
@@ -441,7 +441,6 @@ class DDTVBridge(private val context: Context, private val webView: WebView) {
             put("splitSizeMB", s.splitSizeMB)
             put("remuxAfterLive", s.remuxAfterLive)
             put("heartbeatGlobal", s.heartbeatGlobal)
-            put("danmakuGlobal", s.danmakuGlobal)
             put("danmakuDefault", s.danmakuDefault)
             put("remindLive", s.remindLive)
             put("blockBarrage", s.blockBarrage)
@@ -478,7 +477,6 @@ class DDTVBridge(private val context: Context, private val webView: WebView) {
                 splitSizeMB = o.optLong("splitSizeMB", splitSizeMB)
                 remuxAfterLive = o.optBoolean("remuxAfterLive", remuxAfterLive)
                 heartbeatGlobal = o.optBoolean("heartbeatGlobal", heartbeatGlobal)
-                danmakuGlobal = o.optBoolean("danmakuGlobal", danmakuGlobal)
                 danmakuDefault = o.optBoolean("danmakuDefault", danmakuDefault)
                 remindLive = o.optBoolean("remindLive", remindLive)
                 blockBarrage = o.optString("blockBarrage", blockBarrage)
@@ -1259,6 +1257,28 @@ class DDTVBridge(private val context: Context, private val webView: WebView) {
             """{"code":1,"msg":"已打开系统应用设置"}"""
         } catch (e: Exception) {
             """{"code":-1,"msg":"无法打开: ${e.message}"}"""
+        }
+    }
+
+    /** 打开系统最近任务界面，用户可在其中长按/下拉锁定本应用（部分 ROM 才有"锁定"） */
+    @JavascriptInterface
+    fun openRecents(): String {
+        // 系统没有公开的"打开最近任务"Intent。优先反射 StatusBarManager.expandRecentApps()
+        // （AOSP/部分 ROM 可用，调用需 EXPAND_STATUS_BAR 权限，普通应用通常被拒）；
+        // 全部失败时提示用户手动上滑——不谎报"已打开"。
+        return try {
+            val sbm = context.getSystemService("statusbar")
+            val m = sbm?.javaClass?.getMethod("expandRecentApps")
+            m?.invoke(sbm)
+            """{"code":1,"msg":"已打开最近任务，请在卡片上锁定本应用"}"""
+        } catch (e: Exception) {
+            try {
+                val sbm = context.getSystemService("statusbar")
+                sbm?.javaClass?.getMethod("toggleRecentApps")?.invoke(sbm)
+                """{"code":1,"msg":"已打开最近任务，请在卡片上锁定本应用"}"""
+            } catch (_: Exception) {
+                """{"code":-1,"msg":"请在系统最近任务里把本应用下拉/长按锁定"}"""
+            }
         }
     }
 
