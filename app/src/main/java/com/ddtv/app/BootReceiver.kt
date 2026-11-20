@@ -18,6 +18,8 @@ class BootReceiver : BroadcastReceiver() {
         // 设置里"开机自启"开关关闭时不拉起（直接读 prefs，冷启动时 RoomManager 尚未 init）
         val prefs = context.getSharedPreferences("ddtv_settings", Context.MODE_PRIVATE)
         if (!prefs.getBoolean("auto_start", true)) return
+        // 用户主动退出过：不自动拉起（重启后仍尊重退出意图）
+        if (com.ddtv.app.core.KeepAlive.isExited(context)) return
         try {
             Logger.init(context)  // 确保文件日志可用（进程冷启动）
             val i = Intent(context, LiveService::class.java)

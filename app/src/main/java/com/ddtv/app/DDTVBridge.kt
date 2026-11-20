@@ -1246,6 +1246,36 @@ class DDTVBridge(private val context: Context, private val webView: WebView) {
     }
 
     /** 打开系统"应用详情/后台应用管理"界面（引导用户允许 DDTV 后台运行、自启动，防被系统杀进程） */
+    /**
+     * 用户主动「完全退出」：停止录制/听直播/弹幕/心跳/轮询 → 取消保活任务并停止前台服务 →
+     * 置退出标记（保活不再拉起）→ 结束 Activity 并从最近任务移除。
+     * 目的：让用户能真正关掉 App，不再长期占用后台。
+     */
+    @JavascriptInterface
+    fun exitApp() {
+        try {
+            // 1) 停所有业务
+            try { com.ddtv.app.core.LiveRecorder.stopAll() } catch (_: Exception) {}
+            try { com.ddtv.app.core.ListenPlayer.stop() } catch (_: Exception) {}
+            try { com.ddtv.app.core.ListenNotify.cancel() } catch (_: Exception) {}
+            try { RoomManager.stopAllDanmaku() } catch (_: Exception) {}
+            try { com.ddtv.app.core.WatchHeartbeat.stopAll() } catch (_: Exception) {}
+            try { RoomManager.stopPolling() } catch (_: Exception) {}
+            // 2) 取消保活并置退出标记（顺序：先标记，避免停止服务后被 Job 立刻拉起）
+            com.ddtv.app.core.KeepAlive.markExited(context, true)
+            com.ddtv.app.core.KeepAlive.cancel(context)
+            // 3) 停止前台服务
+            try { context.stopService(android.content.Intent(context, com.ddtv.app.LiveService::class.java)) } catch (_: Exception) {}
+            // 4) 结束界面并从最近任务移除
+            mainHandler.post {
+                val act = context as? android.app.Activity ?: return@post
+                if (android.os.Build.VERSION.SDK_INT >= 21) act.finishAndRemoveTask() else act.finish()
+            }
+        } catch (e: Exception) {
+            Logger.w("Bridge", "退出失败: ${e.message}")
+        }
+    }
+
     @JavascriptInterface
     fun openAppBackgroundSettings(): String {
         return try {
@@ -1260,27 +1290,7 @@ class DDTVBridge(private val context: Context, private val webView: WebView) {
         }
     }
 
-    /** 打开系统最近任务界面，用户可在其中长按/下拉锁定本应用（部分 ROM 才有"锁定"） */
-    @JavascriptInterface
-    fun openRecents(): String {
-        // 系统没有公开的"打开最近任务"Intent。优先反射 StatusBarManager.expandRecentApps()
-        // （AOSP/部分 ROM 可用，调用需 EXPAND_STATUS_BAR 权限，普通应用通常被拒）；
-        // 全部失败时提示用户手动上滑——不谎报"已打开"。
-        return try {
-            val sbm = context.getSystemService("statusbar")
-            val m = sbm?.javaClass?.getMethod("expandRecentApps")
-            m?.invoke(sbm)
-            """{"code":1,"msg":"已打开最近任务，请在卡片上锁定本应用"}"""
-        } catch (e: Exception) {
-            try {
-                val sbm = context.getSystemService("statusbar")
-                sbm?.javaClass?.getMethod("toggleRecentApps")?.invoke(sbm)
-                """{"code":1,"msg":"已打开最近任务，请在卡片上锁定本应用"}"""
-            } catch (_: Exception) {
-                """{"code":-1,"msg":"请在系统最近任务里把本应用下拉/长按锁定"}"""
-            }
-        }
-    }
+
 
     /** 为录像文件生成同名 .srt 字幕（关联同目录弹幕 json，工具页用） */
     @JavascriptInterface

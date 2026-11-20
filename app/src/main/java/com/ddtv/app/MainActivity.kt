@@ -159,7 +159,9 @@ class MainActivity : AppCompatActivity() {
         // 恢复上次未完成的修复任务（中断的修复自动继续）
         try { com.ddtv.app.core.RepairTaskManager.restorePending(this) } catch (_: Exception) {}
 
-        // 启动前台服务
+        // 打开 App = 用户未退出：清除退出标记并确保保活任务在位，然后启动前台服务
+        com.ddtv.app.core.KeepAlive.markExited(this, false)
+        com.ddtv.app.core.KeepAlive.schedule(this)
         startService(Intent(this, LiveService::class.java))
 
         // 补提取：audioOnly 房间残留的未提取音频（进程被杀等场景），后台静默执行

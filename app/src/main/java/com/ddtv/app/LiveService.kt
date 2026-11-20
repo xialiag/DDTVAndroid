@@ -134,6 +134,13 @@ class LiveService : Service() {
     }
 
     override fun onTaskRemoved(rootIntent: Intent?) {
+        // 用户主动退出（finishAndRemoveTask 会走到这里）：尊重退出意图，不再重启
+        if (com.ddtv.app.core.KeepAlive.isExited(this)) {
+            Logger.i("Service", "用户已主动退出，不重启服务")
+            stopSelf()
+            super.onTaskRemoved(rootIntent)
+            return
+        }
         // 从最近任务移除时重启服务（录制/监控需要持续运行）
         // Android 12+ 后台启动前台服务会抛 ForegroundServiceStartNotAllowedException，try/catch 兜底
         Logger.i("Service", "应用被移除，重启服务保活")

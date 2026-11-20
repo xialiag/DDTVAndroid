@@ -1482,8 +1482,8 @@ function renderSettings() {
       <label class="switch"><input type="checkbox" id="setKeepScreen" onchange="saveSettings()"><span class="slider"></span></label></div>
     <div class="switch-row"><div class="sw-text"><div class="sw-label">后台保活设置</div><div class="sw-desc">系统应用信息页允许自启动/后台运行,详见「常见问题」</div></div>
       <div class="sw-right"><button class="btn btn-sec btn-sm" onclick="openAppBackgroundSettings()">去设置</button></div></div>
-    <div class="switch-row"><div class="sw-text"><div class="sw-label">后台任务锁定</div><div class="sw-desc">在最近任务中锁定本应用，防止系统清理后台时终止录制（部分系统才有"锁定"）</div></div>
-      <div class="sw-right"><button class="btn btn-sec btn-sm" onclick="openRecents()">去最近任务</button></div></div>
+    <div class="switch-row"><div class="sw-text"><div class="sw-label">进程保活兜底</div><div class="sw-desc">开启后每 15 分钟检查一次，服务被系统杀掉会自动拉起（已内置；下方"退出应用"会关闭它）</div></div>
+      <div class="sw-right"><span class="perm-state on">已内置</span></div></div>
     <h2>调试</h2>
     <div class="switch-row"><div class="sw-text"><div class="sw-label">调试服务器</div><div class="sw-desc">局域网可查看运行状态与日志，默认关闭</div></div>
       <label class="switch"><input type="checkbox" id="setDebug" onchange="toggleDebugServer()"><span class="slider"></span></label></div>
@@ -1491,6 +1491,9 @@ function renderSettings() {
     <h2>更新</h2>
     <div class="switch-row"><div class="sw-text"><div class="sw-label">启动时检查更新</div><div class="sw-desc">启动后静默检查，发现新版本才提示</div></div>
       <label class="switch"><input type="checkbox" id="setAutoUpdate" onchange="saveSettings()"><span class="slider"></span></label></div>
+    <h2>退出</h2>
+    <div class="switch-row"><div class="sw-text"><div class="sw-label">完全退出应用</div><div class="sw-desc">停止录制/听直播/监控与所有后台任务，并关闭保活，之后不会自动拉起</div></div>
+      <div class="sw-right"><button class="btn btn-danger btn-sm" onclick="exitApp()">退出</button></div></div>
     <div class="btn-row tight"><button class="btn btn-sec btn-sm" onclick="checkUpdateNow()">${ic('refresh',12)} 检查更新</button>
       <span class="toolbar-text">当前版本 ${esc(state.version||'')}</span></div>
     <div class="btn-row"><button class="btn btn-sec btn-sm" onclick="renderFaq()">${ic('alert',12)} 常见问题</button></div></div>`;
@@ -1560,9 +1563,9 @@ function pickOutputDir() {
   try { AndroidBridge.pickOutputDir(); } catch(e){ toast('无法打开目录选择器: '+e,'err'); }
 }
 
-function openRecents() {
-  try { const r=JSON.parse(AndroidBridge.openRecents()); toast(r.msg, r.code<0?'err':'ok'); }
-  catch(e){ toast('无法打开：'+e,'err'); }
+function exitApp() {
+  showModal({ title:'完全退出', msg:'将停止录制、听直播、监控与后台保活，之后不会自动拉起。\n确定退出吗？',
+    okText:'退出', onOk:()=>{ try { AndroidBridge.exitApp(); } catch(e){} } });
 }
 function openAppBackgroundSettings() {
   try { const r = JSON.parse(AndroidBridge.openAppBackgroundSettings()); toast(r.msg, r.code<0?'err':'ok'); }
